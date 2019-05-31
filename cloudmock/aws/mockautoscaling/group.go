@@ -58,13 +58,13 @@ func (m *MockAutoscaling) CreateAutoScalingGroup(input *autoscaling.CreateAutoSc
 		DefaultCooldown:      input.DefaultCooldown,
 		DesiredCapacity:      input.DesiredCapacity,
 		// EnabledMetrics:          input.EnabledMetrics,
-		HealthCheckGracePeriod:  input.HealthCheckGracePeriod,
-		HealthCheckType:         input.HealthCheckType,
-		Instances:               []*autoscaling.Instance{},
-		LaunchConfigurationName: input.LaunchConfigurationName,
-		LoadBalancerNames:       input.LoadBalancerNames,
-		MaxSize:                 input.MaxSize,
-		MinSize:                 input.MinSize,
+		HealthCheckGracePeriod:           input.HealthCheckGracePeriod,
+		HealthCheckType:                  input.HealthCheckType,
+		Instances:                        []*autoscaling.Instance{},
+		LaunchConfigurationName:          input.LaunchConfigurationName,
+		LoadBalancerNames:                input.LoadBalancerNames,
+		MaxSize:                          input.MaxSize,
+		MinSize:                          input.MinSize,
 		NewInstancesProtectedFromScaleIn: input.NewInstancesProtectedFromScaleIn,
 		PlacementGroup:                   input.PlacementGroup,
 		// Status:                           input.Status,
@@ -139,6 +139,8 @@ func (m *MockAutoscaling) DescribeAutoScalingGroups(input *autoscaling.DescribeA
 					match = true
 				}
 			}
+		} else {
+			match = true
 		}
 
 		if match {
@@ -179,9 +181,6 @@ func (m *MockAutoscaling) DescribeAutoScalingGroupsRequest(*autoscaling.Describe
 }
 
 func (m *MockAutoscaling) DescribeAutoScalingGroupsPages(request *autoscaling.DescribeAutoScalingGroupsInput, callback func(*autoscaling.DescribeAutoScalingGroupsOutput, bool) bool) error {
-	if request.MaxRecords != nil {
-		glog.Fatalf("MaxRecords not implemented")
-	}
 	if request.NextToken != nil {
 		glog.Fatalf("NextToken not implemented")
 	}
