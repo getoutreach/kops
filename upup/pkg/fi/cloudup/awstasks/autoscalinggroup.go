@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -54,50 +55,13 @@ type AutoscalingGroup struct {
 
 var _ fi.CompareWithID = &AutoscalingGroup{}
 
+var asgCacheWarm = false
+var asgCacheLock = sync.RWMutex{}
+var asgCache []*autoscaling.Group
+
+// CompareWithID returns the ID of the ASG
 func (e *AutoscalingGroup) CompareWithID() *string {
 	return e.Name
-}
-
-func findAutoscalingGroup(cloud awsup.AWSCloud, name string) (*autoscaling.Group, error) {
-	request := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{&name},
-	}
-
-	var found []*autoscaling.Group
-	err := cloud.Autoscaling().DescribeAutoScalingGroupsPages(request, func(p *autoscaling.DescribeAutoScalingGroupsOutput, lastPage bool) (shouldContinue bool) {
-		for _, g := range p.AutoScalingGroups {
-			// Check for "Delete in progress" (the only use of
-			// .Status). We won't be able to update or create while
-			// this is true, but filtering it out here makes the error
-			// messages slightly clearer.
-			if g.Status != nil {
-				glog.Warningf("Skipping AutoScalingGroup %v: %v", *g.AutoScalingGroupName, *g.Status)
-				continue
-			}
-
-			if aws.StringValue(g.AutoScalingGroupName) == name {
-				found = append(found, g)
-			} else {
-				glog.Warningf("Got ASG with unexpected name %q", aws.StringValue(g.AutoScalingGroupName))
-			}
-		}
-
-		return true
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("error listing AutoscalingGroups: %v", err)
-	}
-
-	if len(found) == 0 {
-		return nil, nil
-	}
-
-	if len(found) != 1 {
-		return nil, fmt.Errorf("Found multiple AutoscalingGroups with name %q", name)
-	}
-
-	return found[0], nil
 }
 
 func (e *AutoscalingGroup) Find(c *fi.Context) (*AutoscalingGroup, error) {
@@ -159,6 +123,68 @@ func (e *AutoscalingGroup) Find(c *fi.Context) (*AutoscalingGroup, error) {
 	return actual, nil
 }
 
+// populateAutoscalingGroups fetches all ASGs from AWS and caches them.
+// This function is not thread-safe and callers must ensure synchronization.
+func populateAutoscalingGroups(cloud awsup.AWSCloud) error {
+	asgCache = []*autoscaling.Group{}
+
+	request := &autoscaling.DescribeAutoScalingGroupsInput{
+		MaxRecords: aws.Int64(100),
+	}
+
+	err := cloud.Autoscaling().DescribeAutoScalingGroupsPages(request, func(p *autoscaling.DescribeAutoScalingGroupsOutput, lastPage bool) (shouldContinue bool) {
+		for _, g := range p.AutoScalingGroups {
+			if g.Status != nil {
+				glog.Warningf("Skipping AutoScalingGroup %v: %v", fi.StringValue(g.AutoScalingGroupName), fi.StringValue(g.Status))
+				continue
+			}
+			asgCache = append(asgCache, g)
+		}
+		return true
+	})
+	if err == nil {
+		glog.V(2).Infof("Warmed autoscaling cache")
+		asgCacheWarm = true
+	}
+
+	return err
+}
+
+// findAutoscalingGroup is responsilble for finding all the autoscaling groups for us
+func findAutoscalingGroup(cloud awsup.AWSCloud, name string) (*autoscaling.Group, error) {
+	if !asgCacheWarm {
+		asgCacheLock.Lock()
+		// Check again to see if things have changed while waiting for the lock
+		if !asgCacheWarm {
+			cacheErr := populateAutoscalingGroups(cloud)
+			if cacheErr != nil {
+				asgCacheLock.Unlock()
+				return nil, fmt.Errorf("error listing AutoscalingGroups: %v", cacheErr)
+			}
+		}
+		asgCacheLock.Unlock()
+	}
+
+	var found []*autoscaling.Group
+
+	asgCacheLock.RLock()
+	for _, g := range asgCache {
+		if aws.StringValue(g.AutoScalingGroupName) == name {
+			found = append(found, g)
+		}
+	}
+	asgCacheLock.RUnlock()
+
+	switch len(found) {
+	case 0:
+		return nil, nil
+	case 1:
+		return found[0], nil
+	}
+
+	return nil, fmt.Errorf("found multiple AutoscalingGroups with name: %q", name)
+}
+
 func (e *AutoscalingGroup) normalize(c *fi.Context) error {
 	sort.Strings(e.Metrics)
 
@@ -191,7 +217,12 @@ func (e *AutoscalingGroup) buildTags(cloud fi.Cloud) map[string]string {
 	return tags
 }
 
-func (_ *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *AutoscalingGroup) error {
+// RenderAWS is responsible for building the autoscaling group via AWS API
+func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *AutoscalingGroup) error {
+	asgCacheLock.Lock()
+	defer asgCacheLock.Unlock()
+	asgCacheWarm = false
+
 	tags := []*autoscaling.Tag{}
 	for k, v := range e.buildTags(t.Cloud) {
 		tags = append(tags, &autoscaling.Tag{
@@ -203,6 +234,7 @@ func (_ *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 		})
 	}
 
+	// @step: did we find an autoscaling group?
 	if a == nil {
 		glog.V(2).Infof("Creating autoscaling Group with Name:%q", *e.Name)
 
@@ -415,6 +447,9 @@ type terraformAutoscalingGroup struct {
 }
 
 func (_ *AutoscalingGroup) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *AutoscalingGroup) error {
+	asgCacheLock.Lock()
+	defer asgCacheLock.Unlock()
+	asgCacheWarm = false
 
 	tf := &terraformAutoscalingGroup{
 		Name:                    e.Name,
@@ -519,6 +554,10 @@ type cloudformationAutoscalingGroup struct {
 }
 
 func (_ *AutoscalingGroup) RenderCloudformation(t *cloudformation.CloudformationTarget, a, e, changes *AutoscalingGroup) error {
+	asgCacheLock.Lock()
+	defer asgCacheLock.Unlock()
+	asgCacheWarm = false
+
 	tf := &cloudformationAutoscalingGroup{
 		Name:    e.Name,
 		MinSize: e.MinSize,

@@ -109,7 +109,7 @@ func populateLaunchConfigurations(c *fi.Context) error {
 		return true
 	})
 	if err == nil {
-		klog.V(2).Infof("Warmed launchconfiguration cache")
+		glog.V(2).Infof("Warmed launchconfiguration cache")
 		lcCacheWarm = true
 	}
 
