@@ -18,6 +18,7 @@ package awsup
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -91,6 +92,9 @@ const (
 	WellKnownAccountAmazonSystemLinux2 = "137112412989"
 	WellKnownAccountUbuntu             = "099720109477"
 )
+
+var imageCache = map[string]*ec2.Image{}
+var imageLookupLock = sync.RWMutex{}
 
 type AWSCloud interface {
 	fi.Cloud
@@ -570,7 +574,7 @@ func matchesAsgTags(tags map[string]string, actual []*autoscaling.TagDescription
 }
 
 // findAutoscalingGroupLaunchConfiguration is responsible for finding the launch - which could be a launchconfiguration, a template or a mixed instance policy template
-func findAutoscalingGroupLaunchConfiguration(g *autoscaling.Group) (string, error) {
+func findAutoscalingGroupLaunchConfiguration(c AWSCloud, g *autoscaling.Group) (string, error) {
 	name := aws.StringValue(g.LaunchConfigurationName)
 	if name != "" {
 		return name, nil
@@ -590,9 +594,30 @@ func findAutoscalingGroupLaunchConfiguration(g *autoscaling.Group) (string, erro
 	if g.MixedInstancesPolicy != nil {
 		if g.MixedInstancesPolicy.LaunchTemplate != nil {
 			if g.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification != nil {
-				// honestly!!
+				var version string
 				name = aws.StringValue(g.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.LaunchTemplateName)
-				version := aws.StringValue(g.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.Version)
+				//See what version the ASG is set to use
+				mixedVersion := aws.StringValue(g.MixedInstancesPolicy.LaunchTemplate.LaunchTemplateSpecification.Version)
+				//Correctly Handle Default and Latest Versions
+				if mixedVersion == "" || mixedVersion == "$Default" || mixedVersion == "$Latest" {
+					request := &ec2.DescribeLaunchTemplatesInput{
+						LaunchTemplateNames: []*string{&name},
+					}
+					dltResponse, err := c.EC2().DescribeLaunchTemplates(request)
+					if err != nil {
+						return "", fmt.Errorf("error describing launch templates: %v", err)
+					}
+					launchTemplate := dltResponse.LaunchTemplates[0]
+					if mixedVersion == "" || mixedVersion == "$Default" {
+						version = strconv.FormatInt(*launchTemplate.DefaultVersionNumber, 10)
+					} else {
+						version = strconv.FormatInt(*launchTemplate.LatestVersionNumber, 10)
+					}
+				} else {
+					version = mixedVersion
+				}
+				klog.V(4).Infof("Launch Template Version Specified By ASG: %v", mixedVersion)
+				klog.V(4).Infof("Launch Template Version we are using for compare: %v", version)
 				if name != "" {
 					launchTemplate := name + ":" + version
 					return launchTemplate, nil
@@ -625,7 +650,7 @@ func findInstanceLaunchConfiguration(i *autoscaling.Instance) string {
 }
 
 func awsBuildCloudInstanceGroup(c AWSCloud, ig *kops.InstanceGroup, g *autoscaling.Group, nodeMap map[string]*v1.Node) (*cloudinstances.CloudInstanceGroup, error) {
-	newConfigName, err := findAutoscalingGroupLaunchConfiguration(g)
+	newConfigName, err := findAutoscalingGroupLaunchConfiguration(c, g)
 	if err != nil {
 		return nil, err
 	}
@@ -1147,7 +1172,17 @@ func describeVPC(c AWSCloud, vpcID string) (*ec2.Vpc, error) {
 // owner/name in which case we find the image with the specified name, owned by owner
 // name in which case we find the image with the specified name, with the current owner
 func (c *awsCloudImplementation) ResolveImage(name string) (*ec2.Image, error) {
-	return resolveImage(c.ec2, name)
+	imageLookupLock.RLock()
+	if val, ok := imageCache[name]; ok {
+		imageLookupLock.RUnlock()
+		return val, nil
+	}
+	imageLookupLock.RUnlock()
+
+	imageLookupLock.Lock()
+	defer imageLookupLock.Unlock()
+	img, err := resolveImage(c.ec2, name)
+	return img, err
 }
 
 func resolveImage(ec2Client ec2iface.EC2API, name string) (*ec2.Image, error) {
@@ -1203,6 +1238,8 @@ func resolveImage(ec2Client ec2iface.EC2API, name string) (*ec2.Image, error) {
 			image = v
 		}
 	}
+
+	imageCache[name] = image
 
 	klog.V(4).Infof("Resolved image %q", aws.StringValue(image.ImageId))
 	return image, nil
