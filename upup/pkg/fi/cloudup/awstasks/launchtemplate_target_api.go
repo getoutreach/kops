@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/kops/upup/pkg/fi"
@@ -30,6 +31,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/golang/glog"
 )
+
+var ltCacheLock = sync.RWMutex{}
+var ltCache []*ec2.LaunchTemplate
+var ltVersionCacheLock = sync.RWMutex{}
+var ltVersionCache []*ec2.LaunchTemplateVersion
 
 // RenderAWS is responsible for performing creating / updating the launch template
 func (t *LaunchTemplate) RenderAWS(c *awsup.AWSAPITarget, a, ep, changes *LaunchTemplate) error {
@@ -169,13 +175,13 @@ func (t *LaunchTemplate) Find(c *fi.Context) (*LaunchTemplate, error) {
 	glog.V(3).Infof("found existing LaunchTemplate: %s", fi.StringValue(lt.LaunchTemplateName))
 
 	actual := &LaunchTemplate{
-		AssociatePublicIP:  fi.Bool(false),
-		ID:                 lt.LaunchTemplateName,
-		ImageID:            lt.LaunchTemplateData.ImageId,
-		InstanceMonitoring: fi.Bool(false),
-		InstanceType:       lt.LaunchTemplateData.InstanceType,
-		Lifecycle:          t.Lifecycle,
-		Name:               t.Name,
+		AssociatePublicIP:      fi.Bool(false),
+		ID:                     lt.LaunchTemplateName,
+		ImageID:                lt.LaunchTemplateData.ImageId,
+		InstanceMonitoring:     fi.Bool(false),
+		InstanceType:           lt.LaunchTemplateData.InstanceType,
+		Lifecycle:              t.Lifecycle,
+		Name:                   t.Name,
 		RootVolumeOptimization: lt.LaunchTemplateData.EbsOptimized,
 	}
 
@@ -264,7 +270,11 @@ func (t *LaunchTemplate) Find(c *fi.Context) (*LaunchTemplate, error) {
 
 // findAllLaunchTemplates returns all the launch templates for us
 func (t *LaunchTemplate) findAllLaunchTemplates(c *fi.Context) ([]*ec2.LaunchTemplate, error) {
-	var list []*ec2.LaunchTemplate
+	if ltCache != nil {
+		return ltCache, nil
+	}
+	ltCacheLock.Lock()
+	defer ltCacheLock.Unlock()
 
 	cloud := c.Cloud.(awsup.AWSCloud)
 
@@ -277,11 +287,11 @@ func (t *LaunchTemplate) findAllLaunchTemplates(c *fi.Context) ([]*ec2.LaunchTem
 			return nil, err
 		}
 		for _, x := range resp.LaunchTemplates {
-			list = append(list, x)
+			ltCache = append(ltCache, x)
 		}
 
 		if resp.NextToken == nil {
-			return list, nil
+			return ltCache, nil
 		}
 		next = resp.NextToken
 	}
@@ -289,17 +299,23 @@ func (t *LaunchTemplate) findAllLaunchTemplates(c *fi.Context) ([]*ec2.LaunchTem
 
 // findAllLaunchTemplateVersions returns all the launch templates versions for us
 func (t *LaunchTemplate) findAllLaunchTemplatesVersions(c *fi.Context) ([]*ec2.LaunchTemplateVersion, error) {
-	var list []*ec2.LaunchTemplateVersion
+	if ltVersionCache != nil {
+		return ltVersionCache, nil
+	}
+	ltVersionCacheLock.Lock()
+	defer ltVersionCacheLock.Unlock()
 
 	cloud, ok := c.Cloud.(awsup.AWSCloud)
 	if !ok {
 		return []*ec2.LaunchTemplateVersion{}, fmt.Errorf("invalid cloud provider: %v, expected: awsup.AWSCloud", c.Cloud)
 	}
 
+	ltCacheLock.RLock()
 	templates, err := t.findAllLaunchTemplates(c)
 	if err != nil {
 		return nil, err
 	}
+	ltCacheLock.RUnlock()
 
 	var next *string
 	for _, x := range templates {
@@ -313,7 +329,7 @@ func (t *LaunchTemplate) findAllLaunchTemplatesVersions(c *fi.Context) ([]*ec2.L
 					return err
 				}
 				for _, x := range resp.LaunchTemplateVersions {
-					list = append(list, x)
+					ltVersionCache = append(ltVersionCache, x)
 				}
 				if resp.NextToken == nil {
 					return nil
@@ -327,11 +343,14 @@ func (t *LaunchTemplate) findAllLaunchTemplatesVersions(c *fi.Context) ([]*ec2.L
 		}
 	}
 
-	return list, nil
+	return ltVersionCache, nil
 }
 
 // findLaunchTemplates returns a list of launch templates
 func (t *LaunchTemplate) findLaunchTemplates(c *fi.Context) ([]*ec2.LaunchTemplateVersion, error) {
+	ltVersionCacheLock.RLock()
+	defer ltVersionCacheLock.RUnlock()
+
 	// @step: get a list of the launch templates
 	list, err := t.findAllLaunchTemplatesVersions(c)
 	if err != nil {
