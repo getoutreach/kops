@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,19 +44,14 @@ func (s flavorList) Swap(i, j int) {
 func (s flavorList) Less(i, j int) bool {
 	if s[i].VCPUs < s[j].VCPUs {
 		return true
-	} else {
-		if s[i].VCPUs > s[j].VCPUs {
-			return false
-		}
+	}
+	if s[i].VCPUs > s[j].VCPUs {
+		return false
 	}
 	return s[i].RAM < s[j].RAM
 }
 
 func (c *openstackCloud) DefaultInstanceType(cluster *kops.Cluster, ig *kops.InstanceGroup) (string, error) {
-	type flavorInfo struct {
-		memory int
-		cpu    int
-	}
 	flavorPage, err := flavors.ListDetail(c.ComputeClient(), flavors.ListOpts{
 		MinRAM: 1024,
 	}).AllPages()

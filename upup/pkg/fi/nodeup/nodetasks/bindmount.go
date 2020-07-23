@@ -55,10 +55,6 @@ func (e *BindMount) GetName() *string {
 	return fi.String("BindMount-" + e.Mountpoint)
 }
 
-func (e *BindMount) SetName(name string) {
-	klog.Fatalf("SetName not supported for BindMount task")
-}
-
 var _ fi.HasDependencies = &BindMount{}
 
 // GetDependencies implements HasDependencies::GetDependencies
@@ -66,9 +62,7 @@ func (e *BindMount) GetDependencies(tasks map[string]fi.Task) []fi.Task {
 	var deps []fi.Task
 
 	// Requires parent directories to be created
-	for _, v := range findCreatesDirParents(e.Mountpoint, tasks) {
-		deps = append(deps, v)
-	}
+	deps = append(deps, findCreatesDirParents(e.Mountpoint, tasks)...)
 	for _, v := range findCreatesDirMatching(e.Mountpoint, tasks) {
 		if v != e && findTaskInSlice(deps, v) == -1 {
 			deps = append(deps, v)
@@ -202,13 +196,13 @@ func (e *BindMount) execute(t Executor) error {
 	for _, option := range e.Options {
 		switch option {
 		case "ro":
-			simpleOptions = append(simpleOptions, "ro")
+			simpleOptions = append(simpleOptions, option)
 
 		case "rshared":
 			makeOptions = append(makeOptions, "--make-rshared")
 
-		case "exec":
-			remountOptions = append(remountOptions, "exec")
+		case "exec", "noexec", "nosuid", "nodev":
+			remountOptions = append(remountOptions, option)
 
 		default:
 			return fmt.Errorf("unknown option: %q", option)

@@ -25,7 +25,7 @@ import (
 
 type ImageRemapFunction func(image string) (string, error)
 
-func (m *Manifest) RemapImages(mapper ImageRemapFunction) error {
+func (m *Object) RemapImages(mapper ImageRemapFunction) error {
 	visitor := &imageRemapVisitor{
 		mapper: mapper,
 	}
@@ -47,7 +47,7 @@ func (m *imageRemapVisitor) VisitString(path []string, v string, mutator func(st
 		return nil
 	}
 
-	// Deployments/DaemonSets/Jobs/StatefulSets have two imapge fields
+	// Deployments/DaemonSets/Jobs/StatefulSets have two image fields
 	//	- spec.template.spec.containers.[2].image
 	//  - spec.template.spec.initContainers.[2].image
 	if n < 3 || (path[n-3] != "containers" && path[n-3] != "initContainers") {

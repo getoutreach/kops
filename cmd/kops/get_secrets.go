@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -29,8 +30,8 @@ import (
 	"k8s.io/kops/pkg/sshcredentials"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/util/pkg/tables"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 // SecretTypeSSHPublicKey is set in a KeysetItem.Type for an SSH public keypair
@@ -67,7 +68,8 @@ func NewCmdGetSecrets(f *util.Factory, out io.Writer, getOptions *GetOptions) *c
 		Long:    getSecretLong,
 		Example: getSecretExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			err := RunGetSecrets(&options, args)
+			ctx := context.TODO()
+			err := RunGetSecrets(ctx, &options, args)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -105,7 +107,7 @@ func listSecrets(keyStore fi.CAStore, secretStore fi.SecretStore, sshCredentialS
 				item := &fi.KeystoreItem{
 					Name: keyset.Name,
 					Type: keyset.Spec.Type,
-					Id:   key.Id,
+					ID:   key.Id,
 				}
 				items = append(items, item)
 			}
@@ -144,7 +146,7 @@ func listSecrets(keyStore fi.CAStore, secretStore fi.SecretStore, sshCredentialS
 			}
 			item := &fi.KeystoreItem{
 				Name: l[i].Name,
-				Id:   id,
+				ID:   id,
 				Type: SecretTypeSSHPublicKey,
 			}
 			if l[i].Spec.PublicKey != "" {
@@ -181,8 +183,8 @@ func listSecrets(keyStore fi.CAStore, secretStore fi.SecretStore, sshCredentialS
 	return items, nil
 }
 
-func RunGetSecrets(options *GetSecretsOptions, args []string) error {
-	cluster, err := rootCommand.Cluster()
+func RunGetSecrets(ctx context.Context, options *GetSecretsOptions, args []string) error {
+	cluster, err := rootCommand.Cluster(ctx)
 	if err != nil {
 		return err
 	}
@@ -224,7 +226,7 @@ func RunGetSecrets(options *GetSecretsOptions, args []string) error {
 			return i.Name
 		})
 		t.AddColumn("ID", func(i *fi.KeystoreItem) string {
-			return i.Id
+			return i.ID
 		})
 		t.AddColumn("TYPE", func(i *fi.KeystoreItem) string {
 			return string(i.Type)

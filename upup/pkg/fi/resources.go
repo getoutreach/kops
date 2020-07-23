@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -207,6 +207,7 @@ type ResourceHolder struct {
 }
 
 var _ Resource = &ResourceHolder{}
+var _ HasDependencies = &ResourceHolder{}
 
 // Open implements the Open method of the Resource interface
 func (o *ResourceHolder) Open() (io.Reader, error) {
@@ -214,6 +215,13 @@ func (o *ResourceHolder) Open() (io.Reader, error) {
 		return nil, fmt.Errorf("ResourceHolder %q is not bound", o.Name)
 	}
 	return o.Resource.Open()
+}
+
+func (r *ResourceHolder) GetDependencies(tasks map[string]Task) []Task {
+	if hasDependencies, ok := r.Resource.(HasDependencies); ok {
+		return hasDependencies.GetDependencies(tasks)
+	}
+	return nil
 }
 
 // UnmarshalJSON implements the special JSON marshaling for the resource, rendering the name
@@ -247,4 +255,23 @@ func WrapResource(r Resource) *ResourceHolder {
 	return &ResourceHolder{
 		Resource: r,
 	}
+}
+
+type TaskDependentResource struct {
+	Resource Resource `json:"resource,omitempty"`
+	Task     Task     `json:"task,omitempty"`
+}
+
+var _ Resource = &TaskDependentResource{}
+var _ HasDependencies = &TaskDependentResource{}
+
+func (r *TaskDependentResource) Open() (io.Reader, error) {
+	if r.Resource == nil {
+		return nil, fmt.Errorf("resource opened before it is ready")
+	}
+	return r.Resource.Open()
+}
+
+func (r *TaskDependentResource) GetDependencies(tasks map[string]Task) []Task {
+	return []Task{r.Task}
 }

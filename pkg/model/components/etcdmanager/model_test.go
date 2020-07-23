@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package etcdmanager
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"k8s.io/kops/pkg/assets"
@@ -27,28 +28,38 @@ import (
 )
 
 func Test_RunEtcdManagerBuilder(t *testing.T) {
-	basedir := "tests/minimal"
-
-	context := &fi.ModelBuilderContext{
-		Tasks: make(map[string]fi.Task),
+	tests := []string{
+		"tests/minimal",
+		"tests/proxy",
+		"tests/old_versions_mount_hosts",
+		"tests/overwrite_settings",
 	}
-	kopsModelContext, err := LoadKopsModelContext(basedir)
-	if err != nil {
-		t.Fatalf("error loading model %q: %v", basedir, err)
-		return
-	}
+	for _, basedir := range tests {
+		basedir := basedir
 
-	builder := EtcdManagerBuilder{
-		KopsModelContext: kopsModelContext,
-		AssetBuilder:     assets.NewAssetBuilder(kopsModelContext.Cluster, ""),
-	}
+		t.Run(fmt.Sprintf("basedir=%s", basedir), func(t *testing.T) {
+			context := &fi.ModelBuilderContext{
+				Tasks: make(map[string]fi.Task),
+			}
+			kopsModelContext, err := LoadKopsModelContext(basedir)
+			if err != nil {
+				t.Fatalf("error loading model %q: %v", basedir, err)
+				return
+			}
 
-	if err := builder.Build(context); err != nil {
-		t.Fatalf("error from Build: %v", err)
-		return
-	}
+			builder := EtcdManagerBuilder{
+				KopsModelContext: kopsModelContext,
+				AssetBuilder:     assets.NewAssetBuilder(kopsModelContext.Cluster, ""),
+			}
 
-	testutils.ValidateTasks(t, basedir, context)
+			if err := builder.Build(context); err != nil {
+				t.Fatalf("error from Build: %v", err)
+				return
+			}
+
+			testutils.ValidateTasks(t, filepath.Join(basedir, "tasks.yaml"), context)
+		})
+	}
 }
 
 func LoadKopsModelContext(basedir string) (*model.KopsModelContext, error) {

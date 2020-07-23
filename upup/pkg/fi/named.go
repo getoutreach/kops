@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,8 +16,12 @@ limitations under the License.
 
 package fi
 
-// HasName indicates that the task has a Name
+// HasName indicates that the task has a Name.
 type HasName interface {
 	GetName() *string
+}
+
+// HasSetName indicates that the task can set its Name.
+type HasSetName interface {
 	SetName(name string)
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import (
 	"os"
 	"strings"
 
-	cinderv2 "github.com/gophercloud/gophercloud/openstack/blockstorage/v2/volumes"
+	cinderv3 "github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
 	"k8s.io/klog"
 	"k8s.io/kops/protokube/pkg/etcd"
@@ -173,7 +173,15 @@ func (a *OpenstackVolumes) discoverTags() error {
 	// Internal IP
 	{
 		server, err := a.cloud.GetInstance(strings.TrimSpace(a.meta.ServerID))
-		ip, err := openstack.GetServerFixedIP(server, a.clusterName)
+		if err != nil {
+			return fmt.Errorf("error getting instance from ID: %v", err)
+		}
+		// find kopsNetwork from metadata, fallback to clustername
+		ifName := a.clusterName
+		if val, ok := server.Metadata[openstack.TagKopsNetwork]; ok {
+			ifName = val
+		}
+		ip, err := openstack.GetServerFixedIP(server, ifName)
 		if err != nil {
 			return fmt.Errorf("error querying InternalIP from name: %v", err)
 		}
@@ -184,7 +192,7 @@ func (a *OpenstackVolumes) discoverTags() error {
 	return nil
 }
 
-func (v *OpenstackVolumes) buildOpenstackVolume(d *cinderv2.Volume) (*Volume, error) {
+func (v *OpenstackVolumes) buildOpenstackVolume(d *cinderv3.Volume) (*Volume, error) {
 	volumeName := d.Name
 	vol := &Volume{
 		ID: d.ID,
@@ -223,7 +231,7 @@ func (v *OpenstackVolumes) FindVolumes() ([]*Volume, error) {
 
 	klog.V(2).Infof("Listing Openstack disks in %s/%s", v.project, v.meta.AvailabilityZone)
 
-	vols, err := v.cloud.ListVolumes(cinderv2.ListOpts{
+	vols, err := v.cloud.ListVolumes(cinderv3.ListOpts{
 		TenantID: v.project,
 	})
 	if err != nil {

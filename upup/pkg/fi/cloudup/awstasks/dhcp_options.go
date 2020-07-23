@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -141,7 +141,9 @@ func (_ *DHCPOptions) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *DHCPOption
 	if a == nil {
 		klog.V(2).Infof("Creating DHCPOptions with Name:%q", *e.Name)
 
-		request := &ec2.CreateDhcpOptionsInput{}
+		request := &ec2.CreateDhcpOptionsInput{
+			TagSpecifications: awsup.EC2TagSpecification(ec2.ResourceTypeDhcpOptions, e.Tags),
+		}
 		if e.DomainNameServers != nil {
 			o := &ec2.NewDhcpConfiguration{
 				Key:    aws.String("domain-name-servers"),
@@ -169,9 +171,9 @@ func (_ *DHCPOptions) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *DHCPOption
 }
 
 type terraformDHCPOptions struct {
-	DomainName        *string           `json:"domain_name,omitempty"`
-	DomainNameServers []string          `json:"domain_name_servers,omitempty"`
-	Tags              map[string]string `json:"tags,omitempty"`
+	DomainName        *string           `json:"domain_name,omitempty" cty:"domain_name"`
+	DomainNameServers []string          `json:"domain_name_servers,omitempty" cty:"domain_name_servers"`
+	Tags              map[string]string `json:"tags,omitempty" cty:"tags"`
 }
 
 func (_ *DHCPOptions) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *DHCPOptions) error {

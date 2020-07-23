@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,15 +17,17 @@ limitations under the License.
 package instancegroups
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
-	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 	api "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/cloudinstances"
+	"k8s.io/kops/pkg/validation"
 	"k8s.io/kops/upup/pkg/fi"
 )
 
@@ -44,8 +46,12 @@ type RollingUpdateCluster struct {
 
 	Force bool
 
-	K8sClient        kubernetes.Interface
-	ClientGetter     genericclioptions.RESTClientGetter
+	// K8sClient is the kubernetes client, used for draining etc
+	K8sClient kubernetes.Interface
+
+	// ClusterValidator is used for validating the cluster. Unused if CloudOnly
+	ClusterValidator validation.ClusterValidator
+
 	FailOnDrainError bool
 	FailOnValidate   bool
 	CloudOnly        bool
@@ -56,10 +62,45 @@ type RollingUpdateCluster struct {
 
 	// ValidationTimeout is the maximum time to wait for the cluster to validate, once we start validation
 	ValidationTimeout time.Duration
+
+	// ValidateTickDuration is the amount of time to wait between cluster validation attempts
+	ValidateTickDuration time.Duration
+
+	// ValidateSuccessDuration is the amount of time a cluster must continue to validate successfully
+	// before updating the next node
+	ValidateSuccessDuration time.Duration
+
+	// ValidateCount is the amount of time that a cluster needs to be validated after single node update
+	ValidateCount int
+}
+
+// AdjustNeedUpdate adjusts the set of instances that need updating, using factors outside those known by the cloud implementation
+func (c *RollingUpdateCluster) AdjustNeedUpdate(groups map[string]*cloudinstances.CloudInstanceGroup, cluster *api.Cluster, instanceGroups *api.InstanceGroupList) error {
+	for _, group := range groups {
+		if group.Ready != nil {
+			var newReady []*cloudinstances.CloudInstanceGroupMember
+			for _, member := range group.Ready {
+				makeNotReady := false
+				if member.Node != nil && member.Node.Annotations != nil {
+					if _, ok := member.Node.Annotations["kops.k8s.io/needs-update"]; ok {
+						makeNotReady = true
+					}
+				}
+
+				if makeNotReady {
+					group.NeedUpdate = append(group.NeedUpdate, member)
+				} else {
+					newReady = append(newReady, member)
+				}
+			}
+			group.Ready = newReady
+		}
+	}
+	return nil
 }
 
 // RollingUpdate performs a rolling update on a K8s Cluster.
-func (c *RollingUpdateCluster) RollingUpdate(groups map[string]*cloudinstances.CloudInstanceGroup, cluster *api.Cluster, instanceGroups *api.InstanceGroupList) error {
+func (c *RollingUpdateCluster) RollingUpdate(ctx context.Context, groups map[string]*cloudinstances.CloudInstanceGroup, cluster *api.Cluster, instanceGroups *api.InstanceGroupList) error {
 	if len(groups) == 0 {
 		klog.Info("Cloud Instance Group length is zero. Not doing a rolling-update.")
 		return nil
@@ -88,24 +129,21 @@ func (c *RollingUpdateCluster) RollingUpdate(groups map[string]*cloudinstances.C
 	{
 		var wg sync.WaitGroup
 
-		for k, bastionGroup := range bastionGroups {
+		for _, k := range sortGroups(bastionGroups) {
 			wg.Add(1)
-			go func(k string, group *cloudinstances.CloudInstanceGroup) {
+			go func(k string) {
 				resultsMutex.Lock()
 				results[k] = fmt.Errorf("function panic bastions")
 				resultsMutex.Unlock()
 
 				defer wg.Done()
 
-				g, err := NewRollingUpdateInstanceGroup(c.Cloud, group)
-				if err == nil {
-					err = g.RollingUpdate(c, cluster, instanceGroups, true, c.BastionInterval, c.ValidationTimeout)
-				}
+				err := c.rollingUpdateInstanceGroup(ctx, cluster, bastionGroups[k], true, c.BastionInterval)
 
 				resultsMutex.Lock()
 				results[k] = err
 				resultsMutex.Unlock()
-			}(k, bastionGroup)
+			}(k)
 		}
 
 		wg.Wait()
@@ -124,11 +162,8 @@ func (c *RollingUpdateCluster) RollingUpdate(groups map[string]*cloudinstances.C
 		// typically they will be in separate instance groups, so we can force the zones,
 		// and we don't want to roll all the masters at the same time.  See issue #284
 
-		for _, group := range masterGroups {
-			g, err := NewRollingUpdateInstanceGroup(c.Cloud, group)
-			if err == nil {
-				err = g.RollingUpdate(c, cluster, instanceGroups, false, c.MasterInterval, c.ValidationTimeout)
-			}
+		for _, k := range sortGroups(masterGroups) {
+			err := c.rollingUpdateInstanceGroup(ctx, cluster, masterGroups[k], false, c.MasterInterval)
 
 			// Do not continue update if master(s) failed, cluster is potentially in an unhealthy state
 			if err != nil {
@@ -137,42 +172,25 @@ func (c *RollingUpdateCluster) RollingUpdate(groups map[string]*cloudinstances.C
 		}
 	}
 
-	// Upgrade nodes, with greater parallelism
+	// Upgrade nodes
 	{
-		var wg sync.WaitGroup
-
 		// We run nodes in series, even if they are in separate instance groups
 		// typically they will not being separate instance groups. If you roll the nodes in parallel
 		// you can get into a scenario where you can evict multiple statefulset pods from the same
 		// statefulset at the same time. Further improvements needs to be made to protect from this as
 		// well.
 
-		wg.Add(1)
+		for k := range nodeGroups {
+			results[k] = fmt.Errorf("function panic nodes")
+		}
 
-		go func() {
-			for k := range nodeGroups {
-				resultsMutex.Lock()
-				results[k] = fmt.Errorf("function panic nodes")
-				resultsMutex.Unlock()
-			}
+		for _, k := range sortGroups(nodeGroups) {
+			err := c.rollingUpdateInstanceGroup(ctx, cluster, nodeGroups[k], false, c.NodeInterval)
 
-			defer wg.Done()
+			results[k] = err
 
-			for k, group := range nodeGroups {
-				g, err := NewRollingUpdateInstanceGroup(c.Cloud, group)
-				if err == nil {
-					err = g.RollingUpdate(c, cluster, instanceGroups, false, c.NodeInterval, c.ValidationTimeout)
-				}
-
-				resultsMutex.Lock()
-				results[k] = err
-				resultsMutex.Unlock()
-
-				// TODO: Bail on error?
-			}
-		}()
-
-		wg.Wait()
+			// TODO: Bail on error?
+		}
 	}
 
 	for _, err := range results {
@@ -183,4 +201,13 @@ func (c *RollingUpdateCluster) RollingUpdate(groups map[string]*cloudinstances.C
 
 	klog.Infof("Rolling update completed for cluster %q!", c.ClusterName)
 	return nil
+}
+
+func sortGroups(groupMap map[string]*cloudinstances.CloudInstanceGroup) []string {
+	groups := make([]string, 0, len(groupMap))
+	for group := range groupMap {
+		groups = append(groups, group)
+	}
+	sort.Strings(groups)
+	return groups
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,10 @@ package openstacktasks
 
 import (
 	"fmt"
+	"strconv"
 
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/bootfromvolume"
+	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/schedulerhints"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/servers"
@@ -39,12 +42,19 @@ type Instance struct {
 	ServerGroup      *ServerGroup
 	Tags             []string
 	Role             *string
-	UserData         *string
+	UserData         *fi.ResourceHolder
 	Metadata         map[string]string
 	AvailabilityZone *string
+	SecurityGroups   []string
+	FloatingIP       *FloatingIP
 
-	Lifecycle *fi.Lifecycle
+	Lifecycle    *fi.Lifecycle
+	ForAPIServer bool
 }
+
+var _ fi.Task = &Instance{}
+var _ fi.HasAddress = &Instance{}
+var _ fi.HasDependencies = &Instance{}
 
 // GetDependencies returns the dependencies of the Instance task
 func (e *Instance) GetDependencies(tasks map[string]fi.Task) []fi.Task {
@@ -56,7 +66,15 @@ func (e *Instance) GetDependencies(tasks map[string]fi.Task) []fi.Task {
 		if _, ok := task.(*Port); ok {
 			deps = append(deps, task)
 		}
+		if _, ok := task.(*FloatingIP); ok {
+			deps = append(deps, task)
+		}
 	}
+
+	if e.UserData != nil {
+		deps = append(deps, e.UserData.GetDependencies(tasks)...)
+	}
+
 	return deps
 }
 
@@ -70,11 +88,34 @@ func (e *Instance) CompareWithID() *string {
 	return e.ID
 }
 
+func (e *Instance) IsForAPIServer() bool {
+	return e.ForAPIServer
+}
+
+func (e *Instance) FindIPAddress(context *fi.Context) (*string, error) {
+	cloud := context.Cloud.(openstack.OpenstackCloud)
+	if e.Port == nil {
+		return nil, nil
+	}
+
+	ports, err := cloud.GetPort(fi.StringValue(e.Port.ID))
+	if err != nil {
+		return nil, err
+	}
+
+	for _, port := range ports.FixedIPs {
+		return fi.String(port.IPAddress), nil
+	}
+
+	return nil, nil
+}
+
 func (e *Instance) Find(c *fi.Context) (*Instance, error) {
 	if e == nil || e.Name == nil {
 		return nil, nil
 	}
-	serverPage, err := servers.List(c.Cloud.(openstack.OpenstackCloud).ComputeClient(), servers.ListOpts{
+	client := c.Cloud.(openstack.OpenstackCloud).ComputeClient()
+	serverPage, err := servers.List(client, servers.ListOpts{
 		Name: fmt.Sprintf("^%s$", fi.StringValue(e.Name)),
 	}).AllPages()
 	if err != nil {
@@ -125,7 +166,11 @@ func (_ *Instance) CheckChanges(a, e, changes *Instance) error {
 }
 
 func (_ *Instance) ShouldCreate(a, e, changes *Instance) (bool, error) {
-	return a == nil, nil
+	if a == nil {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (_ *Instance) RenderOpenstack(t *openstack.OpenstackAPITarget, a, e, changes *Instance) error {
@@ -141,11 +186,16 @@ func (_ *Instance) RenderOpenstack(t *openstack.OpenstackAPITarget, a, e, change
 					Port: fi.StringValue(e.Port.ID),
 				},
 			},
-			Metadata:      e.Metadata,
-			ServiceClient: t.Cloud.ComputeClient(),
+			Metadata:       e.Metadata,
+			ServiceClient:  t.Cloud.ComputeClient(),
+			SecurityGroups: e.SecurityGroups,
 		}
 		if e.UserData != nil {
-			opt.UserData = []byte(*e.UserData)
+			bytes, err := e.UserData.AsBytes()
+			if err != nil {
+				return err
+			}
+			opt.UserData = bytes
 		}
 		if e.AvailabilityZone != nil {
 			opt.AvailabilityZone = fi.StringValue(e.AvailabilityZone)
@@ -161,18 +211,89 @@ func (_ *Instance) RenderOpenstack(t *openstack.OpenstackAPITarget, a, e, change
 				Group: *e.ServerGroup.ID,
 			},
 		}
-		v, err := t.Cloud.CreateInstance(sgext)
+
+		opts, err := includeBootVolumeOptions(t, e, sgext)
+		if err != nil {
+			return err
+		}
+
+		v, err := t.Cloud.CreateInstance(opts)
 		if err != nil {
 			return fmt.Errorf("Error creating instance: %v", err)
 		}
 		e.ID = fi.String(v.ID)
 		e.ServerGroup.Members = append(e.ServerGroup.Members, fi.StringValue(e.ID))
 
+		if e.FloatingIP != nil {
+			err = associateFloatingIP(t, e)
+		}
+		if err != nil {
+			return err
+		}
+
 		klog.V(2).Infof("Creating a new Openstack instance, id=%s", v.ID)
 
-		return nil
 	}
 
-	klog.V(2).Infof("Openstack task Instance::RenderOpenstack did nothing")
 	return nil
+}
+
+func associateFloatingIP(t *openstack.OpenstackAPITarget, e *Instance) error {
+	cloud := t.Cloud.(openstack.OpenstackCloud)
+
+	err := cloud.AssociateFloatingIPToInstance(fi.StringValue(e.ID), floatingips.AssociateOpts{
+		FloatingIP: fi.StringValue(e.FloatingIP.IP),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to associated floating IP to instance %s: %v", *e.Name, err)
+	}
+	return nil
+}
+
+func includeBootVolumeOptions(t *openstack.OpenstackAPITarget, e *Instance, opts servers.CreateOptsBuilder) (servers.CreateOptsBuilder, error) {
+	if !bootFromVolume(e.Metadata) {
+		return opts, nil
+	}
+
+	i, err := t.Cloud.GetImage(fi.StringValue(e.Image))
+	if err != nil {
+		return nil, fmt.Errorf("Error getting image information: %v", err)
+	}
+
+	bfv := bootfromvolume.CreateOptsExt{
+		CreateOptsBuilder: opts,
+		BlockDevice: []bootfromvolume.BlockDevice{{
+			BootIndex:           0,
+			DeleteOnTermination: true,
+			DestinationType:     "volume",
+			SourceType:          "image",
+			UUID:                i.ID,
+			VolumeSize:          i.MinDiskGigabytes,
+		}},
+	}
+
+	if s, ok := e.Metadata[openstack.BOOT_VOLUME_SIZE]; ok {
+		i, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid value for %v: %v", openstack.BOOT_VOLUME_SIZE, err)
+		}
+
+		bfv.BlockDevice[0].VolumeSize = int(i)
+	}
+
+	return bfv, nil
+}
+
+func bootFromVolume(m map[string]string) bool {
+	v, ok := m[openstack.BOOT_FROM_VOLUME]
+	if !ok {
+		return false
+	}
+
+	switch v {
+	case "true", "enabled":
+		return true
+	default:
+		return false
+	}
 }

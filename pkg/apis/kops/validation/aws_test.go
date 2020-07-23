@@ -19,6 +19,9 @@ package validation
 import (
 	"testing"
 
+	"k8s.io/kops/upup/pkg/fi"
+	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kops/pkg/apis/kops"
 )
@@ -79,15 +82,6 @@ func TestValidateInstanceGroupSpec(t *testing.T) {
 		},
 		{
 			Input: kops.InstanceGroupSpec{
-				MachineType: "m5.large",
-				Image:       "k8s-1.9-debian-jessie-amd64-hvm-ebs-2018-03-11",
-			},
-			ExpectedErrors: []string{
-				"Forbidden::test-nodes.spec.machineType",
-			},
-		},
-		{
-			Input: kops.InstanceGroupSpec{
 				MachineType: "c5.large",
 				Image:       "k8s-1.9-debian-stretch-amd64-hvm-ebs-2018-03-11",
 			},
@@ -95,14 +89,62 @@ func TestValidateInstanceGroupSpec(t *testing.T) {
 		},
 		{
 			Input: kops.InstanceGroupSpec{
-				MachineType: "c5.large",
-				Image:       "k8s-1.9-debian-jessie-amd64-hvm-ebs-2018-03-11",
+				SpotDurationInMinutes: fi.Int64(55),
 			},
 			ExpectedErrors: []string{
-				"Forbidden::test-nodes.spec.machineType",
+				"Unsupported value::test-nodes.spec.spotDurationInMinutes",
 			},
 		},
+		{
+			Input: kops.InstanceGroupSpec{
+				SpotDurationInMinutes: fi.Int64(380),
+			},
+			ExpectedErrors: []string{
+				"Unsupported value::test-nodes.spec.spotDurationInMinutes",
+			},
+		},
+		{
+			Input: kops.InstanceGroupSpec{
+				SpotDurationInMinutes: fi.Int64(125),
+			},
+			ExpectedErrors: []string{
+				"Unsupported value::test-nodes.spec.spotDurationInMinutes",
+			},
+		},
+		{
+			Input: kops.InstanceGroupSpec{
+				SpotDurationInMinutes: fi.Int64(120),
+			},
+			ExpectedErrors: []string{},
+		},
+		{
+			Input: kops.InstanceGroupSpec{
+				InstanceInterruptionBehavior: fi.String("invalidValue"),
+			},
+			ExpectedErrors: []string{
+				"Unsupported value::test-nodes.spec.instanceInterruptionBehavior",
+			},
+		},
+		{
+			Input: kops.InstanceGroupSpec{
+				InstanceInterruptionBehavior: fi.String("terminate"),
+			},
+			ExpectedErrors: []string{},
+		},
+		{
+			Input: kops.InstanceGroupSpec{
+				InstanceInterruptionBehavior: fi.String("hibernate"),
+			},
+			ExpectedErrors: []string{},
+		},
+		{
+			Input: kops.InstanceGroupSpec{
+				InstanceInterruptionBehavior: fi.String("stop"),
+			},
+			ExpectedErrors: []string{},
+		},
 	}
+	cloud := awsup.BuildMockAWSCloud("us-east-1", "abc")
 	for _, g := range grid {
 		ig := &kops.InstanceGroup{
 			ObjectMeta: v1.ObjectMeta{
@@ -110,7 +152,7 @@ func TestValidateInstanceGroupSpec(t *testing.T) {
 			},
 			Spec: g.Input,
 		}
-		errs := awsValidateInstanceGroup(ig)
+		errs := awsValidateInstanceGroup(ig, cloud)
 
 		testErrors(t, g.Input, errs, g.ExpectedErrors)
 	}

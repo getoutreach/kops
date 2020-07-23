@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -53,6 +53,7 @@ func TestLaunchConfigurationGarbageCollection(t *testing.T) {
 			ImageID:        s("ami-12345678"),
 			InstanceType:   s("m3.medium"),
 			SecurityGroups: []*SecurityGroup{},
+			UserData:       fi.WrapResource(fi.NewStringResource("")),
 		}
 
 		return map[string]fi.Task{
@@ -76,6 +77,7 @@ func TestLaunchConfigurationGarbageCollection(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error building context: %v", err)
 			}
+			defer context.Close()
 
 			// We use a longer deadline because we know we often need to
 			// retry here, because we create different versions of

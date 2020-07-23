@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,23 +18,56 @@ package terraform
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 
 	"k8s.io/klog"
 )
 
+type fileFn string
+
+const (
+	fileFnFile       fileFn = "file"
+	fileFnFileBase64 fileFn = "filebase64"
+)
+
+// Literal represents a literal in terraform syntax
 type Literal struct {
-	value string
+	// Value is only used in terraform 0.11 and represents the literal string to use as a value.
+	// "${}" interpolation is supported.
+	Value string `cty:"value"`
+
+	// The below fields are only used in terraform 0.12.
+	// ResourceType represents the type of a resource in a literal reference
+	ResourceType string `cty:"resource_type"`
+	// ResourceName represents the name of a resource in a literal reference
+	ResourceName string `cty:"resource_name"`
+	// ResourceProp represents the property of a resource in a literal reference
+	ResourceProp string `cty:"resource_prop"`
+	// FilePath represents the path for a file reference
+	FilePath string `cty:"file_path"`
+	// FileFn represents the function used to reference the file
+	FileFn fileFn `cty:"file_fn"`
 }
 
 var _ json.Marshaler = &Literal{}
 
 func (l *Literal) MarshalJSON() ([]byte, error) {
-	return json.Marshal(&l.value)
+	return json.Marshal(&l.Value)
 }
 
-func LiteralExpression(s string) *Literal {
-	return &Literal{value: s}
+func LiteralFileExpression(modulePath string, base64 bool) *Literal {
+	fn := fileFnFile
+	if base64 {
+		fn = fileFnFileBase64
+	}
+	return &Literal{
+		// file() is hardcoded here because this field is
+		// used for Terraform 0.11 which does not have filebase64()
+		Value:    fmt.Sprintf("${file(%q)}", modulePath),
+		FilePath: modulePath,
+		FileFn:   fn,
+	}
 }
 
 func LiteralSelfLink(resourceType, resourceName string) *Literal {
@@ -43,13 +76,17 @@ func LiteralSelfLink(resourceType, resourceName string) *Literal {
 
 func LiteralProperty(resourceType, resourceName, prop string) *Literal {
 	tfName := tfSanitize(resourceName)
-
 	expr := "${" + resourceType + "." + tfName + "." + prop + "}"
-	return LiteralExpression(expr)
+	return &Literal{
+		Value:        expr,
+		ResourceType: resourceType,
+		ResourceName: tfName,
+		ResourceProp: prop,
+	}
 }
 
 func LiteralFromStringValue(s string) *Literal {
-	return &Literal{value: s}
+	return &Literal{Value: s}
 }
 
 type literalWithJSON struct {

@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/kubernetes/kops.svg?branch=master)](https://travis-ci.org/kubernetes/kops) [![Go Report Card](https://goreportcard.com/badge/k8s.io/kops)](https://goreportcard.com/report/k8s.io/kops)  [![GoDoc Widget]][GoDoc]
 
-[GoDoc]: https://godoc.org/k8s.io/kops
+[GoDoc]: https://pkg.go.dev/k8s.io/kops
 [GoDoc Widget]: https://godoc.org/k8s.io/kops?status.svg
 
 
@@ -30,19 +30,19 @@ en alpha, y otras plataformas planeadas.
 
 ## Lanzando un anfitrión de Kubernetes cluster en AWS o GCE
 
-Para reproducir exactamente el demo anterior, visualizalo en el [tutorial](/docs/aws.md) para
+Para reproducir exactamente el demo anterior, visualizalo en el [tutorial](/docs/getting_started/aws.md) para
 lanzar un anfitrión de Kubernetes cluster en AWS.
 
-Para instalar un Kubernetes cluster en GCE por fabor siga esta [guide](/docs/tutorial/gce.md).
+Para instalar un Kubernetes cluster en GCE por fabor siga esta [guide](/docs/getting_started/gce.md).
 
 
 ## Caracteristicas
 
-* Automatiza el aprovisionamiento de Kubernetes clusters en [AWS](/docs/aws.md) y [GCE](/docs/tutorial/gce.md)
+* Automatiza el aprovisionamiento de Kubernetes clusters en [AWS](/docs/getting_started/aws.md) y [GCE](/docs/getting_started/gce.md)
 * Un Despliegue Altamente Disponible (HA) Kubernetes Masters
 * Construye en un modelo de estado sincronizado para **dry-runs** y **idempotency** automático
 * Capacidad de generar [Terraform](/docs/terraform.md)
-* Soporta un Kubernetes personalizado [add-ons](/docs/addons.md)
+* Soporta un Kubernetes personalizado [add-ons](/docs/operations/addons.md)
 * Línea de comando [autocompletion](/docs/cli/kops_completion.md)
 * YAML Archivo de Manifiesto Basado en API [Configuration](/docs/manifests_and_customizing_via_api.md)
 * [Templating](/docs/cluster_template.md) y ejecutar modos de simulacro para crear
@@ -81,12 +81,13 @@ particular de Kubernetes.
 
 #### Compatibilidad Matrix
 
-| kops version | k8s 1.5.x | k8s 1.6.x | k8s 1.7.x | k8s 1.8.x | k8s 1.9.x |
-|--------------|-----------|-----------|-----------|-----------|-----------|
-| 1.9.x        | Y         | Y         | Y         | Y         | Y         |
-| 1.8.x        | Y         | Y         | Y         | Y         | N         |
-| 1.7.x        | Y         | Y         | Y         | N         | N         |
-| 1.6.x        | Y         | Y         | N         | N         | N         |
+| kops version  | k8s 1.12.x | k8s 1.13.x | k8s 1.14.x | k8s 1.15.x | k8s 1.16.x |
+|---------------|------------|------------|------------|------------|------------|
+| 1.16.0        | ✔          | ✔          | ✔          | ✔          | ✔          |
+| 1.15.x        | ✔          | ✔          | ✔          | ✔          | ⚫         |
+| 1.14.x        | ✔          | ✔          | ✔          | ⚫         | ⚫         |
+| ~~1.13.x~~    | ✔          | ✔          | ⚫         | ⚫         | ⚫         |
+| ~~1.12.x~~    | ✔          | ⚫         | ⚫         | ⚫         | ⚫         |
 
 Utilice la última versión de kops para todas las versiones de Kubernetes, con la advertencia de que las versiones más altas de Kubernetes no cuentan con el respaldo _oficial_ de kops.
 

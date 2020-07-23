@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -155,7 +155,8 @@ func (_ *VPC) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *VPC) error {
 		klog.V(2).Infof("Creating VPC with CIDR: %q", *e.CIDR)
 
 		request := &ec2.CreateVpcInput{
-			CidrBlock: e.CIDR,
+			CidrBlock:         e.CIDR,
+			TagSpecifications: awsup.EC2TagSpecification(ec2.ResourceTypeVpc, e.Tags),
 		}
 
 		response, err := t.Cloud.EC2().CreateVpc(request)
@@ -194,10 +195,10 @@ func (_ *VPC) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *VPC) error {
 }
 
 type terraformVPC struct {
-	CIDR               *string           `json:"cidr_block,omitempty"`
-	EnableDNSHostnames *bool             `json:"enable_dns_hostnames,omitempty"`
-	EnableDNSSupport   *bool             `json:"enable_dns_support,omitempty"`
-	Tags               map[string]string `json:"tags,omitempty"`
+	CIDR               *string           `json:"cidr_block,omitempty" cty:"cidr_block"`
+	EnableDNSHostnames *bool             `json:"enable_dns_hostnames,omitempty" cty:"enable_dns_hostnames"`
+	EnableDNSSupport   *bool             `json:"enable_dns_support,omitempty" cty:"enable_dns_support"`
+	Tags               map[string]string `json:"tags,omitempty" cty:"tags"`
 }
 
 func (_ *VPC) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *VPC) error {

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import (
 	"k8s.io/kops/upup/pkg/fi/cloudup/cloudformation"
 	"k8s.io/kops/upup/pkg/fi/cloudup/terraform"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"k8s.io/klog"
 )
@@ -140,25 +139,13 @@ func (_ *EBSVolume) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *EBSVolume) e
 		klog.V(2).Infof("Creating PersistentVolume with Name:%q", *e.Name)
 
 		request := &ec2.CreateVolumeInput{
-			Size:             e.SizeGB,
-			AvailabilityZone: e.AvailabilityZone,
-			VolumeType:       e.VolumeType,
-			KmsKeyId:         e.KmsKeyId,
-			Encrypted:        e.Encrypted,
-			Iops:             e.VolumeIops,
-		}
-
-		if len(e.Tags) != 0 {
-			request.TagSpecifications = []*ec2.TagSpecification{
-				{ResourceType: aws.String(ec2.ResourceTypeVolume)},
-			}
-
-			for k, v := range e.Tags {
-				request.TagSpecifications[0].Tags = append(request.TagSpecifications[0].Tags, &ec2.Tag{
-					Key:   aws.String(k),
-					Value: aws.String(v),
-				})
-			}
+			Size:              e.SizeGB,
+			AvailabilityZone:  e.AvailabilityZone,
+			VolumeType:        e.VolumeType,
+			KmsKeyId:          e.KmsKeyId,
+			Encrypted:         e.Encrypted,
+			Iops:              e.VolumeIops,
+			TagSpecifications: awsup.EC2TagSpecification(ec2.ResourceTypeVolume, e.Tags),
 		}
 
 		response, err := t.Cloud.EC2().CreateVolume(request)
@@ -197,13 +184,13 @@ func (e *EBSVolume) getEBSVolumeTagsToDelete(currentTags map[string]string) map[
 }
 
 type terraformVolume struct {
-	AvailabilityZone *string           `json:"availability_zone,omitempty"`
-	Size             *int64            `json:"size,omitempty"`
-	Type             *string           `json:"type,omitempty"`
-	Iops             *int64            `json:"iops,omitempty"`
-	KmsKeyId         *string           `json:"kms_key_id,omitempty"`
-	Encrypted        *bool             `json:"encrypted,omitempty"`
-	Tags             map[string]string `json:"tags,omitempty"`
+	AvailabilityZone *string           `json:"availability_zone,omitempty" cty:"availability_zone"`
+	Size             *int64            `json:"size,omitempty" cty:"size"`
+	Type             *string           `json:"type,omitempty" cty:"type"`
+	Iops             *int64            `json:"iops,omitempty" cty:"iops"`
+	KmsKeyId         *string           `json:"kms_key_id,omitempty" cty:"kms_key_id"`
+	Encrypted        *bool             `json:"encrypted,omitempty" cty:"encrypted"`
+	Tags             map[string]string `json:"tags,omitempty" cty:"tags"`
 }
 
 func (_ *EBSVolume) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *EBSVolume) error {

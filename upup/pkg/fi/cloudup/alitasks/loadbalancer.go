@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,9 +36,11 @@ type LoadBalancer struct {
 	Name                *string
 	LoadbalancerId      *string
 	AddressType         *string
+	VSwitchId           *string
 	LoadBalancerAddress *string
 	Lifecycle           *fi.Lifecycle
 	Tags                map[string]string
+	ForAPIServer        bool
 }
 
 var _ fi.CompareWithID = &LoadBalancer{}
@@ -63,21 +65,25 @@ func (l *LoadBalancer) Find(c *fi.Context) (*LoadBalancer, error) {
 		return nil, fmt.Errorf("error finding LoadBalancers: %v", err)
 	}
 
-	// Don't exist loadbalancer with specified ClusterTags or Name.
+	// There's no loadbalancer with specified ClusterTags or Name.
 	if len(responseLoadBalancers) == 0 {
+		klog.V(4).Infof("can't find loadbalancer with name: %q", *l.Name)
 		return nil, nil
 	}
 	if len(responseLoadBalancers) > 1 {
-		klog.V(4).Infof("The number of specified loadbalancer with the same name exceeds 1, loadbalancerName:%q", *l.Name)
+		return nil, fmt.Errorf("more than 1 loadbalancer is found with name: %q", *l.Name)
 	}
 
 	klog.V(2).Infof("found matching LoadBalancer: %q", *l.Name)
+	lb := responseLoadBalancers[0]
 
-	actual := &LoadBalancer{}
-	actual.Name = fi.String(responseLoadBalancers[0].LoadBalancerName)
-	actual.AddressType = fi.String(string(responseLoadBalancers[0].AddressType))
-	actual.LoadbalancerId = fi.String(responseLoadBalancers[0].LoadBalancerId)
-	actual.LoadBalancerAddress = fi.String(responseLoadBalancers[0].Address)
+	actual := &LoadBalancer{
+		Name:                fi.String(lb.LoadBalancerName),
+		AddressType:         fi.String(string(lb.AddressType)),
+		LoadbalancerId:      fi.String(lb.LoadBalancerId),
+		LoadBalancerAddress: fi.String(lb.Address),
+		VSwitchId:           fi.String(lb.VSwitchId),
+	}
 
 	describeTagsArgs := &slb.DescribeTagsArgs{
 		RegionId:       common.Region(cloud.Region()),
@@ -100,6 +106,10 @@ func (l *LoadBalancer) Find(c *fi.Context) (*LoadBalancer, error) {
 	l.LoadbalancerId = actual.LoadbalancerId
 	actual.Lifecycle = l.Lifecycle
 	return actual, nil
+}
+
+func (l *LoadBalancer) IsForAPIServer() bool {
+	return l.ForAPIServer
 }
 
 func (l *LoadBalancer) FindIPAddress(context *fi.Context) (*string, error) {
@@ -165,6 +175,7 @@ func (_ *LoadBalancer) RenderALI(t *aliup.ALIAPITarget, a, e, changes *LoadBalan
 			RegionId:         common.Region(t.Cloud.Region()),
 			LoadBalancerName: fi.StringValue(e.Name),
 			AddressType:      slb.AddressType(fi.StringValue(e.AddressType)),
+			VSwitchId:        fi.StringValue(e.VSwitchId),
 		}
 		response, err := t.Cloud.SlbClient().CreateLoadBalancer(createLoadBalancerArgs)
 		if err != nil {
@@ -233,8 +244,8 @@ func (l *LoadBalancer) jsonMarshalTags(tags map[string]string) string {
 }
 
 type terraformLoadBalancer struct {
-	Name     *string `json:"name,omitempty"`
-	Internet *bool   `json:"internet,omitempty"`
+	Name     *string `json:"name,omitempty" cty:"name"`
+	Internet *bool   `json:"internet,omitempty" cty:"internet"`
 }
 
 func (_ *LoadBalancer) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *LoadBalancer) error {

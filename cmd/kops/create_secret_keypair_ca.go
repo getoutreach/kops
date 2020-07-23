@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -29,8 +30,8 @@ import (
 	"k8s.io/kops/pkg/pki"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/utils"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -64,6 +65,8 @@ func NewCmdCreateSecretCaCert(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    createSecretCacertLong,
 		Example: createSecretCacertExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			err := rootCommand.ProcessArgs(args)
 			if err != nil {
 				exitWithError(err)
@@ -71,7 +74,7 @@ func NewCmdCreateSecretCaCert(f *util.Factory, out io.Writer) *cobra.Command {
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err = RunCreateSecretCaCert(f, os.Stdout, options)
+			err = RunCreateSecretCaCert(ctx, f, os.Stdout, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -85,7 +88,7 @@ func NewCmdCreateSecretCaCert(f *util.Factory, out io.Writer) *cobra.Command {
 }
 
 // RunCreateSecretCaCert adds a custom ca certificate and private key
-func RunCreateSecretCaCert(f *util.Factory, out io.Writer, options *CreateSecretCaCertOptions) error {
+func RunCreateSecretCaCert(ctx context.Context, f *util.Factory, out io.Writer, options *CreateSecretCaCertOptions) error {
 	if options.CaCertPath == "" {
 		return fmt.Errorf("error cert provided")
 	}
@@ -94,7 +97,7 @@ func RunCreateSecretCaCert(f *util.Factory, out io.Writer, options *CreateSecret
 		return fmt.Errorf("error no private key provided")
 	}
 
-	cluster, err := GetCluster(f, options.ClusterName)
+	cluster, err := GetCluster(ctx, f, options.ClusterName)
 	if err != nil {
 		return fmt.Errorf("error getting cluster: %q: %v", options.ClusterName, err)
 	}
@@ -130,7 +133,7 @@ func RunCreateSecretCaCert(f *util.Factory, out io.Writer, options *CreateSecret
 		return fmt.Errorf("error loading certificate %q: %v", options.CaCertPath, err)
 	}
 
-	err = keyStore.StoreKeypair(fi.CertificateId_CA, cert, privateKey)
+	err = keyStore.StoreKeypair(fi.CertificateIDCA, cert, privateKey)
 	if err != nil {
 		return fmt.Errorf("error storing user provided keys %q %q: %v", options.CaCertPath, options.CaPrivateKeyPath, err)
 	}

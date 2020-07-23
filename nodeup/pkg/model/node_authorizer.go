@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ func (b *NodeAuthorizationBuilder) Build(c *fi.ModelBuilderContext) error {
 			return err
 		}
 		// creates /src/kubernetes/node-authorizer/ca.pem
-		if err := b.BuildCertificateTask(c, fi.CertificateId_CA, filepath.Join(name, "ca.pem")); err != nil {
+		if err := b.BuildCertificateTask(c, fi.CertificateIDCA, filepath.Join(name, "ca.pem")); err != nil {
 			return err
 		}
 	}
@@ -58,7 +58,7 @@ func (b *NodeAuthorizationBuilder) Build(c *fi.ModelBuilderContext) error {
 		if err := b.BuildCertificatePairTask(c, "node-authorizer-client", authorizerDir, "tls"); err != nil {
 			return err
 		}
-		if err := b.BuildCertificateTask(c, fi.CertificateId_CA, authorizerDir+"/ca.pem"); err != nil {
+		if err := b.BuildCertificateTask(c, fi.CertificateIDCA, authorizerDir+"/ca.pem"); err != nil {
 			return err
 		}
 	}
@@ -77,8 +77,15 @@ func (b *NodeAuthorizationBuilder) Build(c *fi.ModelBuilderContext) error {
 		man := &systemd.Manifest{}
 		man.Set("Unit", "Description", "Node Authorization Client")
 		man.Set("Unit", "Documentation", "https://github.com/kubernetes/kops")
-		man.Set("Unit", "After", "docker.service")
 		man.Set("Unit", "Before", "kubelet.service")
+		switch b.Cluster.Spec.ContainerRuntime {
+		case "docker":
+			man.Set("Unit", "After", "docker.service")
+		case "containerd":
+			man.Set("Unit", "After", "containerd.service")
+		default:
+			klog.Warningf("unknown container runtime %q", b.Cluster.Spec.ContainerRuntime)
+		}
 
 		clientCert := filepath.Join(b.PathSrvKubernetes(), authorizerDir, "tls.pem")
 		man.Set("Service", "Type", "oneshot")

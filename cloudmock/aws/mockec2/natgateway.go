@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,9 +30,12 @@ func (m *MockEC2) CreateNatGatewayWithId(request *ec2.CreateNatGatewayInput, id 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	tags := tagSpecificationsToTags(request.TagSpecifications, ec2.ResourceTypeNatgateway)
+
 	ngw := &ec2.NatGateway{
 		NatGatewayId: s(id),
 		SubnetId:     request.SubnetId,
+		Tags:         tags,
 	}
 
 	if request.AllocationId != nil {
@@ -56,6 +59,8 @@ func (m *MockEC2) CreateNatGatewayWithId(request *ec2.CreateNatGatewayInput, id 
 		m.NatGateways = make(map[string]*ec2.NatGateway)
 	}
 	m.NatGateways[*ngw.NatGatewayId] = ngw
+
+	m.addTags(id, tags...)
 
 	copy := *ngw
 
@@ -128,7 +133,7 @@ func (m *MockEC2) DescribeNatGateways(request *ec2.DescribeNatGatewaysInput) (*e
 				}
 			default:
 				if strings.HasPrefix(*filter.Name, "tag:") {
-					match = m.hasTag(ResourceTypeNatGateway, *ngw.NatGatewayId, filter)
+					match = m.hasTag(ec2.ResourceTypeNatgateway, *ngw.NatGatewayId, filter)
 				} else {
 					return nil, fmt.Errorf("unknown filter name: %q", *filter.Name)
 				}
@@ -145,7 +150,7 @@ func (m *MockEC2) DescribeNatGateways(request *ec2.DescribeNatGatewaysInput) (*e
 		}
 
 		copy := *ngw
-		copy.Tags = m.getTags(ResourceTypeNatGateway, id)
+		copy.Tags = m.getTags(ec2.ResourceTypeNatgateway, id)
 		ngws = append(ngws, &copy)
 	}
 

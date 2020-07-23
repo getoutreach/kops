@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -221,11 +221,11 @@ func checkNotNil(s *string) *string {
 }
 
 type terraformRoute struct {
-	RouteTableID      *terraform.Literal `json:"route_table_id"`
-	CIDR              *string            `json:"destination_cidr_block,omitempty"`
-	InternetGatewayID *terraform.Literal `json:"gateway_id,omitempty"`
-	NATGatewayID      *terraform.Literal `json:"nat_gateway_id,omitempty"`
-	InstanceID        *terraform.Literal `json:"instance_id,omitempty"`
+	RouteTableID      *terraform.Literal `json:"route_table_id" cty:"route_table_id"`
+	CIDR              *string            `json:"destination_cidr_block,omitempty" cty:"destination_cidr_block"`
+	InternetGatewayID *terraform.Literal `json:"gateway_id,omitempty" cty:"gateway_id"`
+	NATGatewayID      *terraform.Literal `json:"nat_gateway_id,omitempty" cty:"nat_gateway_id"`
+	InstanceID        *terraform.Literal `json:"instance_id,omitempty" cty:"instance_id"`
 }
 
 func (_ *Route) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *Route) error {
@@ -246,7 +246,10 @@ func (_ *Route) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *Rou
 		tf.InstanceID = e.Instance.TerraformLink()
 	}
 
-	return t.RenderResource("aws_route", *e.Name, tf)
+	// Terraform 0.12 doesn't support resource names that start with digits. See #7052
+	// and https://www.terraform.io/upgrade-guides/0-12.html#pre-upgrade-checklist
+	name := fmt.Sprintf("route-%v", *e.Name)
+	return t.RenderResource("aws_route", name, tf)
 }
 
 type cloudformationRoute struct {

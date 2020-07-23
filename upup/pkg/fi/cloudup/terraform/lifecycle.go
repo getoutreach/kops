@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,6 @@ limitations under the License.
 package terraform
 
 type Lifecycle struct {
-	PreventDestroy      *bool `json:"prevent_destroy,omitempty"`
-	CreateBeforeDestroy *bool `json:"create_before_destroy,omitempty"`
+	PreventDestroy      *bool `json:"prevent_destroy,omitempty" cty:"prevent_destroy"`
+	CreateBeforeDestroy *bool `json:"create_before_destroy,omitempty" cty:"create_before_destroy"`
 }

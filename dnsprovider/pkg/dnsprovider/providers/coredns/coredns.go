@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ type Config struct {
 }
 
 func init() {
-	dnsprovider.RegisterDnsProvider(ProviderName, func(config io.Reader) (dnsprovider.Interface, error) {
+	dnsprovider.RegisterDNSProvider(ProviderName, func(config io.Reader) (dnsprovider.Interface, error) {
 		return newCoreDNSProviderInterface(config)
 	})
 }
@@ -68,7 +68,7 @@ func newCoreDNSProviderInterface(config io.Reader) (*Interface, error) {
 	klog.Infof("Using CoreDNS DNS provider")
 
 	if dnsZones == "" {
-		return nil, fmt.Errorf("Need to provide at least one DNS Zone")
+		return nil, fmt.Errorf("need to provide at least one DNS Zone")
 	}
 
 	etcdCfg := etcdc.Config{
@@ -78,7 +78,7 @@ func newCoreDNSProviderInterface(config io.Reader) (*Interface, error) {
 
 	c, err := etcdc.New(etcdCfg)
 	if err != nil {
-		return nil, fmt.Errorf("Create etcd client from the config failed")
+		return nil, fmt.Errorf("create etcd client from the config failed")
 	}
 	etcdKeysAPI := etcdc.NewKeysAPI(c)
 

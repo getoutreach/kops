@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -24,7 +25,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 	"k8s.io/kops/cmd/kops/util"
-	api "k8s.io/kops/pkg/apis/kops"
+	kopsapi "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/kubeconfig"
 	"k8s.io/kops/pkg/resources"
 	resourceops "k8s.io/kops/pkg/resources/ops"
@@ -32,8 +33,8 @@ import (
 	"k8s.io/kops/upup/pkg/fi/cloudup"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
 	"k8s.io/kops/util/pkg/tables"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 type DeleteClusterOptions struct {
@@ -69,6 +70,8 @@ func NewCmdDeleteCluster(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    deleteClusterLong,
 		Example: deleteClusterExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			err := rootCommand.ProcessArgs(args)
 			if err != nil {
 				exitWithError(err)
@@ -77,7 +80,7 @@ func NewCmdDeleteCluster(f *util.Factory, out io.Writer) *cobra.Command {
 			// Note _not_ ClusterName(); we only want the --name flag
 			options.ClusterName = rootCommand.clusterName
 
-			err = RunDeleteCluster(f, out, options)
+			err = RunDeleteCluster(ctx, f, out, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -92,16 +95,14 @@ func NewCmdDeleteCluster(f *util.Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-type getter func(o interface{}) interface{}
-
-func RunDeleteCluster(f *util.Factory, out io.Writer, options *DeleteClusterOptions) error {
+func RunDeleteCluster(ctx context.Context, f *util.Factory, out io.Writer, options *DeleteClusterOptions) error {
 	clusterName := options.ClusterName
 	if clusterName == "" {
 		return fmt.Errorf("--name is required (for safety)")
 	}
 
 	var cloud fi.Cloud
-	var cluster *api.Cluster
+	var cluster *kopsapi.Cluster
 	var err error
 
 	if options.External {
@@ -116,7 +117,7 @@ func RunDeleteCluster(f *util.Factory, out io.Writer, options *DeleteClusterOpti
 			return fmt.Errorf("error initializing AWS client: %v", err)
 		}
 	} else {
-		cluster, err = GetCluster(f, clusterName)
+		cluster, err = GetCluster(ctx, f, clusterName)
 		if err != nil {
 			return err
 		}
@@ -197,7 +198,7 @@ func RunDeleteCluster(f *util.Factory, out io.Writer, options *DeleteClusterOpti
 		if err != nil {
 			return err
 		}
-		err = clientset.DeleteCluster(cluster)
+		err = clientset.DeleteCluster(ctx, cluster)
 		if err != nil {
 			return fmt.Errorf("error removing cluster from state store: %v", err)
 		}

@@ -8,6 +8,7 @@ By default Kops creates two IAM roles for the cluster: one for the masters, and 
 Work has been done on scoping permissions to the minimum required for a functional Kubernetes Cluster, resulting in a fully revised set of IAM policies for both master & compute nodes.
 
 An example of the new IAM policies can be found here:
+
 - Master Nodes: https://github.com/kubernetes/kops/blob/master/pkg/model/iam/tests/iam_builder_master_strict.json
 - Compute Nodes: https://github.com/kubernetes/kops/blob/master/pkg/model/iam/tests/iam_builder_node_strict.json
 
@@ -21,7 +22,7 @@ iam:
 
 Following this, run a cluster update to have the changes take effect:
 
-```
+```shell
 kops update cluster ${CLUSTER_NAME} --yes
 ```
 
@@ -56,6 +57,26 @@ The additional permissions are:
 }
 ```
 
+## Adding External Policies
+
+At times you may want to attach policies shared to you by another AWS account or that are maintained by an outside application. You can specify managed policies through the `policyOverrides` spec field.
+
+Policy Overrides are specified by their ARN on AWS and are grouped by their role type. See the example below:
+
+```yaml
+spec:
+  externalPolicies:
+    node:
+    - aws:arn:iam:123456789000:policy:test-policy
+    master:
+    - aws:arn:iam:123456789000:policy:test-policy
+    bastion:
+    - aws:arn:iam:123456789000:policy:test-policy
+```
+
+External Policy attachments are treated declaritively. Any policies declared will be attached to the role, any policies not specified will be detached _after_ new policies are attached. This does not replace or affect built in Kops policies in any way.
+
+It's important to note that externalPolicies will only handle the attachment and detachment of policies, not creation, modification, or deletion.
 
 ## Adding Additional Policies
 
@@ -65,7 +86,7 @@ to add DynamoDB and Elasticsearch permissions to your nodes.
 
 Edit your cluster via `kops edit cluster ${CLUSTER_NAME}` and add the following to the spec:
 
-```
+```yaml
 spec:
   additionalPolicies:
     node: |
@@ -85,9 +106,8 @@ spec:
 
 After you're finished editing, your cluster spec should look something like this:
 
-```
+```yaml
 metadata:
-  creationTimestamp: "2016-06-27T14:23:34Z"
   name: ${CLUSTER_NAME}
 spec:
   cloudProvider: aws
@@ -115,13 +135,13 @@ spec:
 
 Now you can run a cluster update to have the changes take effect:
 
-```
+```shell
 kops update cluster ${CLUSTER_NAME} --yes
 ```
 
 You can have an additional policy for each kops role (node, master, bastion). For instance, if you wanted to apply one set of additional permissions to the master instances, and another to the nodes, you could do the following:
 
-```
+```yaml
 spec:
   additionalPolicies:
     node: |
@@ -154,13 +174,13 @@ This is due to the lifecycle overrides being used to prevent creation of the IAM
 
 To do this, get a list of instance group names for the cluster:
 
-```
+```shell
 kops get ig --name ${CLUSTER_NAME}
 ```
 
 And update every instance group's spec with the desired instance profile ARNs:
 
-```
+```shell
 kops edit ig --name ${CLUSTER_NAME} ${INSTANCE_GROUP_NAME}
 ```
 
@@ -174,14 +194,14 @@ spec:
 
 Now run a cluster update to create the new launch configuration, using [lifecycle overrides](./cli/kops_update_cluster.md#options) to prevent IAM-related resources from being created:
 
-```
+```shell
 kops update cluster ${CLUSTER_NAME} --yes --lifecycle-overrides IAMRole=ExistsAndWarnIfChanges,IAMRolePolicy=ExistsAndWarnIfChanges,IAMInstanceProfileRole=ExistsAndWarnIfChanges
 ```
 
-*Everytime `kops update cluster` is run, it must include the above `--lifecycle-overrides` unless a non-`security` phase is specified.*
+*Every time `kops update cluster` is run, it must include the above `--lifecycle-overrides` unless a non-`security` phase is specified.*
 
 Finally, perform a rolling update in order to replace EC2 instances in the ASG with the new launch configuration:
 
-```
+```shell
 kops rolling-update cluster ${CLUSTER_NAME} --yes
 ```

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	"k8s.io/klog"
 	"k8s.io/kops/channels/pkg/api"
 	"k8s.io/kops/upup/pkg/fi/utils"
@@ -54,6 +54,20 @@ func ParseAddons(name string, location *url.URL, data []byte) (*Addons, error) {
 		err := utils.YamlUnmarshal([]byte(configString), apiObject)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing addons: %v", err)
+		}
+	}
+
+	for _, addon := range apiObject.Spec.Addons {
+		if addon != nil && addon.Version != nil && *addon.Version != "" {
+			name := apiObject.ObjectMeta.Name
+			if addon.Name != nil {
+				name = *addon.Name
+			}
+
+			_, err := semver.ParseTolerant(*addon.Version)
+			if err != nil {
+				return nil, fmt.Errorf("addon %q has unparseable version %q: %v", name, *addon.Version, err)
+			}
 		}
 	}
 

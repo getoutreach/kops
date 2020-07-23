@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"k8s.io/kops/pkg/model/components"
 	"k8s.io/kops/pkg/tokens"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/nodetasks"
@@ -45,10 +46,11 @@ func (b *SecretBuilder) Build(c *fi.ModelBuilderContext) error {
 	}
 
 	// @step: retrieve the platform ca
-	if err := b.BuildCertificateTask(c, fi.CertificateId_CA, "ca.crt"); err != nil {
+	if err := b.BuildCertificateTask(c, fi.CertificateIDCA, "ca.crt"); err != nil {
 		return err
 	}
 
+	// Write out docker auth secret, if exists
 	if b.SecretStore != nil {
 		key := "dockerconfig"
 		dockercfg, _ := b.SecretStore.Secret(key)
@@ -69,41 +71,70 @@ func (b *SecretBuilder) Build(c *fi.ModelBuilderContext) error {
 	}
 
 	{
-		name := "master"
-		if err := b.BuildCertificateTask(c, name, "server.cert"); err != nil {
-			return err
+		// A few names used from inside the cluster, which all resolve the same based on our default suffixes
+		alternateNames := []string{
+			"kubernetes",
+			"kubernetes.default",
+			"kubernetes.default.svc",
+			"kubernetes.default.svc." + b.Cluster.Spec.ClusterDNSDomain,
 		}
-		if err := b.BuildPrivateKeyTask(c, name, "server.key"); err != nil {
+
+		// Names specified in the cluster spec
+		alternateNames = append(alternateNames, b.Cluster.Spec.MasterPublicName)
+		alternateNames = append(alternateNames, b.Cluster.Spec.MasterInternalName)
+		alternateNames = append(alternateNames, b.Cluster.Spec.AdditionalSANs...)
+
+		// Load balancer IPs passed in through NodeupConfig
+		alternateNames = append(alternateNames, b.NodeupConfig.ApiserverAdditionalIPs...)
+
+		// Referencing it by internal IP should work also
+		{
+			ip, err := components.WellKnownServiceIP(&b.Cluster.Spec, 1)
+			if err != nil {
+				return err
+			}
+			alternateNames = append(alternateNames, ip.String())
+		}
+
+		// We also want to be able to reference it locally via https://127.0.0.1
+		alternateNames = append(alternateNames, "127.0.0.1")
+
+		issueCert := &nodetasks.IssueCert{
+			Name:           "master",
+			Signer:         fi.CertificateIDCA,
+			Type:           "server",
+			Subject:        nodetasks.PKIXName{CommonName: "kubernetes-master"},
+			AlternateNames: alternateNames,
+		}
+		c.AddTask(issueCert)
+		err := issueCert.AddFileTasks(c, b.PathSrvKubernetes(), "server", "", nil)
+		if err != nil {
 			return err
 		}
 	}
 
-	if b.IsKubernetesGTE("1.7") {
-		// TODO: Remove - we use the apiserver-aggregator keypair instead (which is signed by a different CA)
-		if err := b.BuildCertificateTask(c, "apiserver-proxy-client", "proxy-client.cert"); err != nil {
-			return err
+	{
+		issueCert := &nodetasks.IssueCert{
+			Name:   "apiserver-aggregator",
+			Signer: "apiserver-aggregator-ca",
+			Type:   "client",
+			// Must match RequestheaderAllowedNames
+			Subject: nodetasks.PKIXName{CommonName: "aggregator"},
 		}
-		if err := b.BuildPrivateKeyTask(c, "apiserver-proxy-client", "proxy-client.key"); err != nil {
-			return err
-		}
-	}
-
-	if b.IsKubernetesGTE("1.7") {
-		if err := b.BuildCertificateTask(c, "apiserver-aggregator", "apiserver-aggregator.cert"); err != nil {
-			return err
-		}
-		if err := b.BuildPrivateKeyTask(c, "apiserver-aggregator", "apiserver-aggregator.key"); err != nil {
+		c.AddTask(issueCert)
+		err := issueCert.AddFileTasks(c, b.PathSrvKubernetes(), "apiserver-aggregator", "apiserver-aggregator-ca", nil)
+		if err != nil {
 			return err
 		}
 	}
 
-	if b.IsKubernetesGTE("1.7") {
-		if err := b.BuildCertificateTask(c, "apiserver-aggregator-ca", "apiserver-aggregator-ca.cert"); err != nil {
-			return err
-		}
+	if err := b.BuildPrivateKeyTask(c, "master", "service-account.key"); err != nil {
+		return err
 	}
 
-	if b.SecretStore != nil {
+	// Support for basic auth was deprecated 1.16 and removed in 1.19
+	// https://github.com/kubernetes/kubernetes/pull/89069
+	if b.IsKubernetesLT("1.19") && b.SecretStore != nil {
 		key := "kube"
 		token, err := b.SecretStore.FindSecret(key)
 		if err != nil {

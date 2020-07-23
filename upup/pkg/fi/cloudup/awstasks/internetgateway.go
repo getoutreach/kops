@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -149,7 +149,9 @@ func (_ *InternetGateway) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Intern
 	if a == nil {
 		klog.V(2).Infof("Creating InternetGateway")
 
-		request := &ec2.CreateInternetGatewayInput{}
+		request := &ec2.CreateInternetGatewayInput{
+			TagSpecifications: awsup.EC2TagSpecification(ec2.ResourceTypeInternetGateway, e.Tags),
+		}
 
 		response, err := t.Cloud.EC2().CreateInternetGateway(request)
 		if err != nil {
@@ -177,8 +179,8 @@ func (_ *InternetGateway) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Intern
 }
 
 type terraformInternetGateway struct {
-	VPCID *terraform.Literal `json:"vpc_id"`
-	Tags  map[string]string  `json:"tags,omitempty"`
+	VPCID *terraform.Literal `json:"vpc_id" cty:"vpc_id"`
+	Tags  map[string]string  `json:"tags,omitempty" cty:"tags"`
 }
 
 func (_ *InternetGateway) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *InternetGateway) error {

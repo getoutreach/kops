@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"time"
 
 	"k8s.io/klog"
 	"k8s.io/kops/util/pkg/hashing"
@@ -76,9 +77,16 @@ func downloadURLAlways(url string, destPath string, dirMode os.FileMode) error {
 
 	klog.Infof("Downloading %q", url)
 
-	response, err := http.Get(url)
+	// Create a client with a shorter timeout
+	httpClient := http.Client{
+		Timeout: 2 * time.Minute,
+	}
+	response, err := httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("error doing HTTP fetch of %q: %v", url, err)
+	}
+	if response.StatusCode >= 400 {
+		return fmt.Errorf("error response from %q: HTTP %v", url, response.StatusCode)
 	}
 	defer response.Body.Close()
 

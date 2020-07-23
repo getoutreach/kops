@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,13 +31,15 @@ func TestLaunchTemplateTerraformRender(t *testing.T) {
 				IAMInstanceProfile: &IAMInstanceProfile{
 					Name: fi.String("nodes"),
 				},
-				ID:                     fi.String("test-11"),
-				InstanceMonitoring:     fi.Bool(true),
-				InstanceType:           fi.String("t2.medium"),
-				SpotPrice:              "0.1",
-				RootVolumeOptimization: fi.Bool(true),
-				RootVolumeIops:         fi.Int64(100),
-				RootVolumeSize:         fi.Int64(64),
+				ID:                           fi.String("test-11"),
+				InstanceMonitoring:           fi.Bool(true),
+				InstanceType:                 fi.String("t2.medium"),
+				SpotPrice:                    "0.1",
+				SpotDurationInMinutes:        fi.Int64(60),
+				InstanceInterruptionBehavior: fi.String("hibernate"),
+				RootVolumeOptimization:       fi.Bool(true),
+				RootVolumeIops:               fi.Int64(100),
+				RootVolumeSize:               fi.Int64(64),
 				SSHKey: &SSHKey{
 					Name:      fi.String("newkey"),
 					PublicKey: fi.WrapResource(fi.NewStringResource("newkey")),
@@ -53,42 +55,36 @@ func TestLaunchTemplateTerraformRender(t *testing.T) {
 }
 
 resource "aws_launch_template" "test" {
-  name_prefix = "test-"
-
-  lifecycle = {
-    create_before_destroy = true
-  }
-
   ebs_optimized = true
-
-  iam_instance_profile = {
-    name = "${aws_iam_instance_profile.nodes.id}"
+  iam_instance_profile {
+    name = aws_iam_instance_profile.nodes.id
   }
-
-  instance_type = "t2.medium"
-  key_name      = "${aws_key_pair.newkey.id}"
-
-  instance_market_options = {
+  instance_market_options {
     market_type = "spot"
-
-    spot_options = {
-      max_price = "0.1"
+    spot_options {
+      block_duration_minutes         = 60
+      instance_interruption_behavior = "hibernate"
+      max_price                      = "0.1"
     }
   }
-
-  network_interfaces = {
+  instance_type = "t2.medium"
+  key_name      = aws_key_pair.newkey.id
+  lifecycle {
+    create_before_destroy = true
+  }
+  name_prefix = "test-"
+  network_interfaces {
     associate_public_ip_address = true
     delete_on_termination       = true
-    security_groups             = ["${aws_security_group.nodes-1.id}", "${aws_security_group.nodes-2.id}"]
+    security_groups             = [aws_security_group.nodes-1.id, aws_security_group.nodes-2.id]
   }
-
-  placement = {
+  placement {
     tenancy = "dedicated"
   }
 }
 
-terraform = {
-  required_version = ">= 0.9.3"
+terraform {
+  required_version = ">= 0.12.0"
 }
 `,
 		},
@@ -128,45 +124,37 @@ terraform = {
 }
 
 resource "aws_launch_template" "test" {
-  name_prefix = "test-"
-
-  lifecycle = {
-    create_before_destroy = true
-  }
-
-  block_device_mappings = {
+  block_device_mappings {
     device_name = "/dev/xvdd"
-
-    ebs = {
-      volume_type           = "gp2"
-      volume_size           = 100
+    ebs {
       delete_on_termination = true
       encrypted             = true
+      volume_size           = 100
+      volume_type           = "gp2"
     }
   }
-
   ebs_optimized = true
-
-  iam_instance_profile = {
-    name = "${aws_iam_instance_profile.nodes.id}"
+  iam_instance_profile {
+    name = aws_iam_instance_profile.nodes.id
   }
-
   instance_type = "t2.medium"
   key_name      = "mykey"
-
-  network_interfaces = {
+  lifecycle {
+    create_before_destroy = true
+  }
+  name_prefix = "test-"
+  network_interfaces {
     associate_public_ip_address = true
     delete_on_termination       = true
-    security_groups             = ["${aws_security_group.nodes-1.id}", "${aws_security_group.nodes-2.id}"]
+    security_groups             = [aws_security_group.nodes-1.id, aws_security_group.nodes-2.id]
   }
-
-  placement = {
+  placement {
     tenancy = "dedicated"
   }
 }
 
-terraform = {
-  required_version = ">= 0.9.3"
+terraform {
+  required_version = ">= 0.12.0"
 }
 `,
 		},

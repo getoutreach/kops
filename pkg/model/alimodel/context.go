@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -74,6 +74,17 @@ func (c *ALIModelContext) LinkToVSwitchSNAT(subnetName string) *alitasks.VSwitch
 
 func (c *ALIModelContext) GetNameForVSwitchSNAT(subnetName string) string {
 	return subnetName + "." + c.ClusterName()
+}
+
+func (c *ALIModelContext) GetUtilitySubnets() []*kops.ClusterSubnetSpec {
+	var subnets []*kops.ClusterSubnetSpec
+	for i := range c.Cluster.Spec.Subnets {
+		subnet := &c.Cluster.Spec.Subnets[i]
+		if subnet.Type == kops.SubnetTypeUtility {
+			subnets = append(subnets, subnet)
+		}
+	}
+	return subnets
 }
 
 // LinkLoadBalancer returns the LoadBalancer object the cluster is located in

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -59,7 +59,6 @@ func makeHTTPClient(config *Config) (*http.Client, error) {
 		}
 		tlsConfig.Certificates = []tls.Certificate{certs}
 	}
-	tlsConfig.BuildNameToCertificate()
 
 	return &http.Client{
 		Timeout: 10 * time.Second,

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -114,7 +114,7 @@ func toDER(pubkey ssh.PublicKey) ([]byte, error) {
 	//	cryptoKey = dsaPublicKey
 
 	default:
-		return nil, fmt.Errorf("Unexpected type of SSH key (%q); AWS can only import RSA keys", typeName)
+		return nil, fmt.Errorf("unexpected type of SSH key (%q); AWS can only import RSA keys", typeName)
 	}
 
 	der, err := x509.MarshalPKIXPublicKey(cryptoKey)

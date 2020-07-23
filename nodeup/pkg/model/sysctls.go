@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@ limitations under the License.
 package model
 
 import (
+	"fmt"
 	"strings"
 
+	"k8s.io/kops/nodeup/pkg/distros"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/nodetasks"
@@ -70,7 +72,7 @@ func (b *SysctlBuilder) Build(c *fi.ModelBuilderContext) error {
 			"net.core.rmem_max = 16777216",
 			"",
 
-			"# Default Socket Send Buffer",
+			"# Maximum Socket Send Buffer",
 			"net.core.wmem_max = 16777216",
 			"",
 
@@ -87,7 +89,8 @@ func (b *SysctlBuilder) Build(c *fi.ModelBuilderContext) error {
 			"net.ipv4.tcp_slow_start_after_idle = 0",
 			"",
 
-			"# Increase the tcp-time-wait buckets pool size to prevent simple DOS attacks",
+			"# Allow to reuse TIME_WAIT sockets for new connections",
+			"# when it is safe from protocol viewpoint",
 			"net.ipv4.tcp_tw_reuse = 1",
 			"",
 
@@ -115,6 +118,23 @@ func (b *SysctlBuilder) Build(c *fi.ModelBuilderContext) error {
 		)
 	}
 
+	// Running Flannel on CentOS7 / rhel7 needs custom settings
+	if b.Cluster.Spec.Networking.Flannel != nil {
+		proxyMode := b.Cluster.Spec.KubeProxy.ProxyMode
+		if proxyMode == "" {
+			proxyMode = "iptables"
+		}
+
+		if proxyMode == "iptables" && (b.Distribution == distros.DistributionCentos7 || b.Distribution == distros.DistributionRhel7) {
+			sysctls = append(sysctls,
+				"# Flannel settings on CentOS 7",
+				"# Issue https://github.com/coreos/flannel/issues/902",
+				"net.bridge.bridge-nf-call-ip6tables=1",
+				"net.bridge.bridge-nf-call-iptables=1",
+				"")
+		}
+	}
+
 	if b.Cluster.Spec.CloudProvider == string(kops.CloudProviderAWS) {
 		sysctls = append(sysctls,
 			"# AWS settings",
@@ -128,6 +148,30 @@ func (b *SysctlBuilder) Build(c *fi.ModelBuilderContext) error {
 		"# Prevent docker from changing iptables: https://github.com/kubernetes/kubernetes/issues/40182",
 		"net.ipv4.ip_forward=1",
 		"")
+
+	if params := b.NodeupConfig.SysctlParameters; len(params) > 0 {
+		sysctls = append(sysctls,
+			"# Custom sysctl parameters from instance group spec",
+			"")
+		for _, param := range params {
+			if !strings.ContainsRune(param, '=') {
+				return fmt.Errorf("Invalid SysctlParameter: expected %q to contain '='", param)
+			}
+			sysctls = append(sysctls, param)
+		}
+	}
+
+	if params := b.Cluster.Spec.SysctlParameters; len(params) > 0 {
+		sysctls = append(sysctls,
+			"# Custom sysctl parameters from cluster spec",
+			"")
+		for _, param := range params {
+			if !strings.ContainsRune(param, '=') {
+				return fmt.Errorf("Invalid SysctlParameter: expected %q to contain '='", param)
+			}
+			sysctls = append(sysctls, param)
+		}
+	}
 
 	c.AddTask(&nodetasks.File{
 		Path:            "/etc/sysctl.d/99-k8s-general.conf",

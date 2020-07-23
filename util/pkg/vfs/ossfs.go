@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -217,6 +217,10 @@ func (p *OSSPath) Remove() error {
 	}
 }
 
+func (p *OSSPath) RemoveAllVersions() error {
+	return p.Remove()
+}
+
 func (p *OSSPath) Base() string {
 	return path.Base(p.key)
 }
@@ -227,6 +231,14 @@ func (p *OSSPath) String() string {
 
 func (p *OSSPath) Path() string {
 	return "oss://" + p.bucket + "/" + p.key
+}
+
+func (p *OSSPath) Bucket() string {
+	return p.bucket
+}
+
+func (p *OSSPath) Key() string {
+	return p.key
 }
 
 func (p *OSSPath) ReadDir() ([]Path, error) {

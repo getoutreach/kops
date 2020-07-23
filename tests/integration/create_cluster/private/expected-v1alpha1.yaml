@@ -1,7 +1,7 @@
 apiVersion: kops.k8s.io/v1alpha1
 kind: Cluster
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   name: private.example.com
 spec:
   adminAccess:
@@ -18,6 +18,7 @@ spec:
     foo/bar: fib+baz
   cloudProvider: aws
   configBase: memfs://tests/private.example.com
+  containerRuntime: docker
   etcdClusters:
   - cpuRequest: 200m
     etcdMembers:
@@ -34,7 +35,9 @@ spec:
   iam:
     allowContainerRegistry: true
     legacy: false
-  kubernetesVersion: v1.4.8
+  kubelet:
+    anonymousAuth: false
+  kubernetesVersion: v1.15.6
   masterPublicName: api.private.example.com
   networkCIDR: 172.20.0.0/16
   networking:
@@ -58,12 +61,12 @@ spec:
 apiVersion: kops.k8s.io/v1alpha1
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: private.example.com
   name: bastions
 spec:
-  image: kope.io/k8s-1.4-debian-jessie-amd64-hvm-ebs-2017-07-28
+  image: kope.io/k8s-1.15-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: t2.micro
   maxSize: 1
   minSize: 1
@@ -78,7 +81,7 @@ spec:
 apiVersion: kops.k8s.io/v1alpha1
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: private.example.com
   name: master-us-test-1a
@@ -86,7 +89,7 @@ spec:
   additionalSecurityGroups:
   - sg-exampleid3
   - sg-exampleid4
-  image: kope.io/k8s-1.4-debian-jessie-amd64-hvm-ebs-2017-07-28
+  image: kope.io/k8s-1.15-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: m3.medium
   maxSize: 1
   minSize: 1
@@ -101,7 +104,7 @@ spec:
 apiVersion: kops.k8s.io/v1alpha1
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: private.example.com
   name: nodes
@@ -109,7 +112,7 @@ spec:
   additionalSecurityGroups:
   - sg-exampleid
   - sg-exampleid2
-  image: kope.io/k8s-1.4-debian-jessie-amd64-hvm-ebs-2017-07-28
+  image: kope.io/k8s-1.15-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: t2.medium
   maxSize: 2
   minSize: 2

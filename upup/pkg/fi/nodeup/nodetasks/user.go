@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import (
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/cloudinit"
 	"k8s.io/kops/upup/pkg/fi/nodeup/local"
-	"k8s.io/kops/upup/pkg/fi/utils"
 )
 
 // UserTask is responsible for creating a user, by calling useradd
@@ -48,21 +47,6 @@ var _ fi.HasName = &File{}
 
 func (f *UserTask) GetName() *string {
 	return &f.Name
-}
-
-func (f *UserTask) SetName(name string) {
-	klog.Fatalf("SetName not supported for User task")
-}
-
-func NewUserTask(name string, contents string, meta string) (fi.Task, error) {
-	s := &UserTask{Name: name}
-
-	err := utils.YamlUnmarshal([]byte(contents), s)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing json for service %q: %v", name, err)
-	}
-
-	return s, nil
 }
 
 func (e *UserTask) Find(c *fi.Context) (*UserTask, error) {

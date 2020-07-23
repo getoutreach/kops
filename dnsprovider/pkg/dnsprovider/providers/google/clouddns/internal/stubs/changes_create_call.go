@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -49,13 +49,13 @@ func (c ChangesCreateCall) Do(opts ...googleapi.CallOption) (interfaces.Change, 
 	}
 	for _, del := range c.Change.Deletions() {
 		if _, found := rrsets[hashKey(del)]; !found {
-			return nil, fmt.Errorf("Attempt to delete non-existent rrset %v", del)
+			return nil, fmt.Errorf("attempt to delete non-existent rrset %v", del)
 		}
 		delete(rrsets, hashKey(del))
 	}
 	for _, add := range c.Change.Additions() {
 		if _, found := rrsets[hashKey(add)]; found {
-			return nil, fmt.Errorf("Attempt to insert duplicate rrset %v", add)
+			return nil, fmt.Errorf("attempt to insert duplicate rrset %v", add)
 		}
 		rrsets[hashKey(add)] = add.(ResourceRecordSet)
 	}

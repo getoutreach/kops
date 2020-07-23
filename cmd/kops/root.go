@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	goflag "flag"
 	"fmt"
 	"io"
@@ -34,10 +35,8 @@ import (
 	"k8s.io/kops/cmd/kops/util"
 	kopsapi "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/client/simple"
-	"k8s.io/kops/pkg/kubeconfig"
-	"k8s.io/kops/upup/pkg/kutil"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 const (
@@ -58,8 +57,8 @@ var (
 	We like to think of it as kubectl for clusters.
 
 	kops helps you create, destroy, upgrade and maintain production-grade, highly available,
-	Kubernetes clusters from the command line.  AWS (Amazon Web Services) is currently
-	officially supported, with GCE and VMware vSphere in alpha support.
+	Kubernetes clusters from the command line. AWS (Amazon Web Services) is currently
+	officially supported, with GCE and OpenStack in beta support.
 	`))
 
 	rootShort = i18n.T(`kops is Kubernetes ops.`)
@@ -118,7 +117,8 @@ func NewCmdRoot(f *util.Factory, out io.Writer) *cobra.Command {
 	goflag.CommandLine.VisitAll(func(goflag *goflag.Flag) {
 		switch goflag.Name {
 		case "cloud-provider-gce-lb-src-cidrs":
-			// Skip; this is dragged in by the google cloudprovider dependency
+		case "cloud-provider-gce-l7lb-src-cidrs":
+			// Skip; these is dragged in by the google cloudprovider dependency
 
 		default:
 			cmd.PersistentFlags().AddGoFlag(goflag)
@@ -223,7 +223,7 @@ func (c *RootCmd) ProcessArgs(args []string) error {
 	fmt.Printf("For example: use `--bastion=true` or `--bastion`, not `--bastion true`\n\n")
 
 	if len(args) == 1 {
-		return fmt.Errorf("Cannot specify cluster via --name and positional argument")
+		return fmt.Errorf("cannot specify cluster via --name and positional argument")
 	}
 	return fmt.Errorf("expected a single <clustername> to be passed as an argument")
 }
@@ -272,43 +272,22 @@ func ClusterNameFromKubecfg() string {
 	return clusterName
 }
 
-func readKubectlClusterConfig() (*kubeconfig.KubectlClusterWithName, error) {
-	kubectl := &kutil.Kubectl{}
-	context, err := kubectl.GetCurrentContext()
-	if err != nil {
-		return nil, fmt.Errorf("error getting current context from kubectl: %v", err)
-	}
-	klog.V(4).Infof("context = %q", context)
-
-	config, err := kubectl.GetConfig(true)
-	if err != nil {
-		return nil, fmt.Errorf("error getting current config from kubectl: %v", err)
-	}
-
-	// Minify should have done this
-	if len(config.Clusters) != 1 {
-		return nil, fmt.Errorf("expected exactly one cluster in kubectl config, found %d", len(config.Clusters))
-	}
-
-	return config.Clusters[0], nil
-}
-
 func (c *RootCmd) Clientset() (simple.Clientset, error) {
 	return c.factory.Clientset()
 }
 
-func (c *RootCmd) Cluster() (*kopsapi.Cluster, error) {
+func (c *RootCmd) Cluster(ctx context.Context) (*kopsapi.Cluster, error) {
 	clusterName := c.ClusterName()
 	if clusterName == "" {
 		return nil, fmt.Errorf("--name is required")
 	}
 
-	return GetCluster(c.factory, clusterName)
+	return GetCluster(ctx, c.factory, clusterName)
 }
 
-func GetCluster(factory Factory, clusterName string) (*kopsapi.Cluster, error) {
+func GetCluster(ctx context.Context, factory Factory, clusterName string) (*kopsapi.Cluster, error) {
 	if clusterName == "" {
-		return nil, field.Required(field.NewPath("ClusterName"), "Cluster name is required")
+		return nil, field.Required(field.NewPath("clusterName"), "Cluster name is required")
 	}
 
 	clientset, err := factory.Clientset()
@@ -316,7 +295,7 @@ func GetCluster(factory Factory, clusterName string) (*kopsapi.Cluster, error) {
 		return nil, err
 	}
 
-	cluster, err := clientset.GetCluster(clusterName)
+	cluster, err := clientset.GetCluster(ctx, clusterName)
 	if err != nil {
 		return nil, fmt.Errorf("error reading cluster configuration: %v", err)
 	}

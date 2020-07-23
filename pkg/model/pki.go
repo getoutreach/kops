@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,12 +20,11 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/kops/pkg/rbac"
 	"k8s.io/kops/pkg/tokens"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/fitasks"
 	"k8s.io/kops/util/pkg/vfs"
-
-	"k8s.io/apiserver/pkg/authentication/user"
 )
 
 // PKIModelBuilder configures PKI keypairs, as well as tokens
@@ -39,17 +38,12 @@ var _ fi.ModelBuilder = &PKIModelBuilder{}
 // Build is responsible for generating the various pki assets.
 func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 
-	// We specify the KeysetFormatV1Alpha2 format, to upgrade from the legacy representation (separate files)
-	// to the newer keyset.yaml representation.
-	format := string(fi.KeysetFormatV1Alpha2)
-
 	// TODO: Only create the CA via this task
 	defaultCA := &fitasks.Keypair{
-		Name:      fi.String(fi.CertificateId_CA),
+		Name:      fi.String(fi.CertificateIDCA),
 		Lifecycle: b.Lifecycle,
 		Subject:   "cn=kubernetes",
 		Type:      "ca",
-		Format:    format,
 	}
 	c.AddTask(defaultCA)
 
@@ -60,58 +54,20 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			c.AddTask(&fitasks.Keypair{
 				Name:      fi.String("kubelet"),
 				Lifecycle: b.Lifecycle,
-				Subject:   "o=" + user.NodesGroup + ",cn=kubelet",
+				Subject:   "o=" + rbac.NodesGroup + ",cn=kubelet",
 				Type:      "client",
 				Signer:    defaultCA,
-				Format:    format,
 			})
 		}
-	}
-	{
-		// Generate a kubelet client certificate for api to speak securely to kubelets. This change was first
-		// introduced in https://github.com/kubernetes/kops/pull/2831 where server.cert/key were used. With kubernetes >= 1.7
-		// the certificate usage is being checked (obviously the above was server not client certificate) and so now fails
-		c.AddTask(&fitasks.Keypair{
-			Name:      fi.String("kubelet-api"),
-			Lifecycle: b.Lifecycle,
-			Subject:   "cn=kubelet-api",
-			Type:      "client",
-			Signer:    defaultCA,
-			Format:    format,
-		})
-	}
-	{
-		t := &fitasks.Keypair{
-			Name:      fi.String("kube-scheduler"),
-			Lifecycle: b.Lifecycle,
-			Subject:   "cn=" + user.KubeScheduler,
-			Type:      "client",
-			Signer:    defaultCA,
-			Format:    format,
-		}
-		c.AddTask(t)
 	}
 
 	{
 		t := &fitasks.Keypair{
 			Name:      fi.String("kube-proxy"),
 			Lifecycle: b.Lifecycle,
-			Subject:   "cn=" + user.KubeProxy,
+			Subject:   "cn=" + rbac.KubeProxy,
 			Type:      "client",
 			Signer:    defaultCA,
-			Format:    format,
-		}
-		c.AddTask(t)
-	}
-
-	{
-		t := &fitasks.Keypair{
-			Name:      fi.String("kube-controller-manager"),
-			Lifecycle: b.Lifecycle,
-			Subject:   "cn=" + user.KubeControllerManager,
-			Type:      "client",
-			Signer:    defaultCA,
-			Format:    format,
 		}
 		c.AddTask(t)
 	}
@@ -134,7 +90,6 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			// TODO: Can this be "server" now that we're not using it for peer connectivity?
 			Type:   "clientServer",
 			Signer: defaultCA,
-			Format: format,
 		})
 
 		// For peer authentication, the same cert is used both as a client
@@ -163,7 +118,6 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Subject:   "cn=etcd-peer",
 			Type:      "clientServer",
 			Signer:    defaultCA,
-			Format:    format,
 		})
 
 		c.AddTask(&fitasks.Keypair{
@@ -172,18 +126,16 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Subject:   "cn=etcd-client",
 			Type:      "client",
 			Signer:    defaultCA,
-			Format:    format,
 		})
 
-		// @check if calico or Cilium is enabled as the CNI provider
-		if b.KopsModelContext.Cluster.Spec.Networking.Calico != nil || b.KopsModelContext.Cluster.Spec.Networking.Cilium != nil {
+		// @check if calico is enabled as the CNI provider
+		if b.KopsModelContext.Cluster.Spec.Networking.Calico != nil {
 			c.AddTask(&fitasks.Keypair{
 				Name:      fi.String("calico-client"),
 				Lifecycle: b.Lifecycle,
 				Subject:   "cn=calico-client",
 				Type:      "client",
 				Signer:    defaultCA,
-				Format:    format,
 			})
 		}
 	}
@@ -194,7 +146,6 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Subject: "cn=" + "system:kube-router",
 			Type:    "client",
 			Signer:  defaultCA,
-			Format:  format,
 		}
 		c.AddTask(t)
 	}
@@ -203,22 +154,9 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 		t := &fitasks.Keypair{
 			Name:      fi.String("kubecfg"),
 			Lifecycle: b.Lifecycle,
-			Subject:   "o=" + user.SystemPrivilegedGroup + ",cn=kubecfg",
+			Subject:   "o=" + rbac.SystemPrivilegedGroup + ",cn=kubecfg",
 			Type:      "client",
 			Signer:    defaultCA,
-			Format:    format,
-		}
-		c.AddTask(t)
-	}
-
-	{
-		t := &fitasks.Keypair{
-			Name:      fi.String("apiserver-proxy-client"),
-			Lifecycle: b.Lifecycle,
-			Subject:   "cn=apiserver-proxy-client",
-			Type:      "client",
-			Signer:    defaultCA,
-			Format:    format,
 		}
 		c.AddTask(t)
 	}
@@ -229,90 +167,20 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Lifecycle: b.Lifecycle,
 			Subject:   "cn=apiserver-aggregator-ca",
 			Type:      "ca",
-			Format:    format,
 		}
 		c.AddTask(aggregatorCA)
-
-		aggregator := &fitasks.Keypair{
-			Name:      fi.String("apiserver-aggregator"),
-			Lifecycle: b.Lifecycle,
-			// Must match RequestheaderAllowedNames
-			Subject: "cn=aggregator",
-			Type:    "client",
-			Signer:  aggregatorCA,
-			Format:  format,
-		}
-		c.AddTask(aggregator)
 	}
 
 	{
-		// Used by e.g. protokube
-		t := &fitasks.Keypair{
-			Name:      fi.String("kops"),
+		serviceAccount := &fitasks.Keypair{
+			// We only need the private key, but it's easier to create a certificate as well.
+			// The strange name is because Kops prior to 1.19 used the api-server TLS key for this.
+			Name:      fi.String("master"),
 			Lifecycle: b.Lifecycle,
-			Subject:   "o=" + user.SystemPrivilegedGroup + ",cn=kops",
-			Type:      "client",
-			Signer:    defaultCA,
-			Format:    format,
+			Subject:   "cn=service-account",
+			Type:      "ca",
 		}
-		c.AddTask(t)
-	}
-
-	{
-		// A few names used from inside the cluster, which all resolve the same based on our default suffixes
-		alternateNames := []string{
-			"kubernetes",
-			"kubernetes.default",
-			"kubernetes.default.svc",
-			"kubernetes.default.svc." + b.Cluster.Spec.ClusterDNSDomain,
-		}
-
-		// Names specified in the cluster spec
-		alternateNames = append(alternateNames, b.Cluster.Spec.MasterPublicName)
-		alternateNames = append(alternateNames, b.Cluster.Spec.MasterInternalName)
-		alternateNames = append(alternateNames, b.Cluster.Spec.AdditionalSANs...)
-
-		// Referencing it by internal IP should work also
-		{
-			ip, err := b.WellKnownServiceIP(1)
-			if err != nil {
-				return err
-			}
-			alternateNames = append(alternateNames, ip.String())
-		}
-
-		// We also want to be able to reference it locally via https://127.0.0.1
-		alternateNames = append(alternateNames, "127.0.0.1")
-
-		t := &fitasks.Keypair{
-			Name:           fi.String("master"),
-			Lifecycle:      b.Lifecycle,
-			Subject:        "cn=kubernetes-master",
-			Type:           "server",
-			AlternateNames: alternateNames,
-			Signer:         defaultCA,
-			Format:         format,
-		}
-		c.AddTask(t)
-	}
-
-	if b.Cluster.Spec.Authentication != nil {
-		if b.KopsModelContext.Cluster.Spec.Authentication.Aws != nil {
-			alternateNames := []string{
-				"localhost",
-				"127.0.0.1",
-			}
-
-			t := &fitasks.Keypair{
-				Name:           fi.String("aws-iam-authenticator"),
-				Subject:        "cn=aws-iam-authenticator",
-				Type:           "server",
-				AlternateNames: alternateNames,
-				Signer:         defaultCA,
-				Format:         format,
-			}
-			c.AddTask(t)
-		}
+		c.AddTask(serviceAccount)
 	}
 
 	// @TODO this is VERY presumptuous, i'm going on the basis we can make it configurable in the future.
@@ -336,7 +204,6 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Type:           "server",
 			AlternateNames: alternateNames,
 			Signer:         defaultCA,
-			Format:         format,
 		})
 
 		// @note: we use this for mutual tls between node and authorizer
@@ -345,7 +212,6 @@ func (b *PKIModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Subject: "cn=node-authorizer-client",
 			Type:    "client",
 			Signer:  defaultCA,
-			Format:  format,
 		})
 	}
 

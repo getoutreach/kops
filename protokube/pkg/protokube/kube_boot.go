@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,13 +17,12 @@ limitations under the License.
 package protokube
 
 import (
-	"fmt"
+	"context"
 	"net"
 	"path/filepath"
 	"time"
 
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/util/mount"
 )
 
 var (
@@ -49,7 +48,7 @@ type KubeBoot struct {
 	DNS DNSProvider
 	// ModelDir is the model directory
 	ModelDir string
-	// Kubernetes is the context methods for kubernetes
+	// Kubernetes holds a kubernetes client
 	Kubernetes *KubernetesContext
 	// Master indicates we are a master node
 	Master bool
@@ -82,6 +81,14 @@ type KubeBoot struct {
 	// PeerKey is the path to a peer private key for etcd
 	PeerKey string
 
+	// BootstrapMasterNodeLabels controls the initial application of node labels to our node
+	// The node is found by matching NodeName
+	BootstrapMasterNodeLabels bool
+
+	// NodeName is the name of our node as it will be registered in k8s.
+	// Used by BootstrapMasterNodeLabels
+	NodeName string
+
 	volumeMounter   *VolumeMountController
 	etcdControllers map[string]*EtcdController
 }
@@ -95,7 +102,8 @@ func (k *KubeBoot) Init(volumesProvider Volumes) {
 // RunSyncLoop is responsible for provision the cluster
 func (k *KubeBoot) RunSyncLoop() {
 	for {
-		if err := k.syncOnce(); err != nil {
+		ctx := context.Background()
+		if err := k.syncOnce(ctx); err != nil {
 			klog.Warningf("error during attempt to bootstrap (will sleep and retry): %v", err)
 		}
 
@@ -103,7 +111,7 @@ func (k *KubeBoot) RunSyncLoop() {
 	}
 }
 
-func (k *KubeBoot) syncOnce() error {
+func (k *KubeBoot) syncOnce(ctx context.Context) error {
 	if k.Master && k.ManageEtcd {
 		// attempt to mount the volumes
 		volumes, err := k.volumeMounter.mountMasterVolumes()
@@ -133,22 +141,19 @@ func (k *KubeBoot) syncOnce() error {
 		klog.V(4).Infof("protokube management of etcd not enabled; won't scan for volumes")
 	}
 
-	// Ensure kubelet is running. We avoid doing this automatically so
-	// that when kubelet comes up the first time, all volume mounts
-	// and DNS are available, avoiding the scenario where
-	// etcd/apiserver retry too many times and go into backoff.
-	if err := startKubeletService(); err != nil {
-		klog.Warningf("error ensuring kubelet started: %v", err)
-	}
-
 	if k.Master {
+		if k.BootstrapMasterNodeLabels {
+			if err := bootstrapMasterNodeLabels(ctx, k.Kubernetes, k.NodeName); err != nil {
+				klog.Warningf("error bootstrapping master node labels: %v", err)
+			}
+		}
 		if k.ApplyTaints {
-			if err := applyMasterTaints(k.Kubernetes); err != nil {
+			if err := applyMasterTaints(ctx, k.Kubernetes); err != nil {
 				klog.Warningf("error updating master taints: %v", err)
 			}
 		}
 		if k.InitializeRBAC {
-			if err := applyRBAC(k.Kubernetes); err != nil {
+			if err := applyRBAC(ctx, k.Kubernetes); err != nil {
 				klog.Warningf("error initializing rbac: %v", err)
 			}
 		}
@@ -158,39 +163,6 @@ func (k *KubeBoot) syncOnce() error {
 			}
 		}
 	}
-
-	return nil
-}
-
-// startKubeletService is responsible for checking and if not starting the kubelet service
-func startKubeletService() error {
-	// TODO: Check/log status of kubelet
-	// (in particular, we want to avoid kubernetes/kubernetes#40123 )
-	klog.V(2).Infof("ensuring that kubelet systemd service is running")
-
-	// We run systemctl from the hostfs so we don't need systemd in our image
-	// (and we don't risk version skew)
-
-	exec := mount.NewOsExec()
-	if Containerized {
-		exec = NewNsEnterExec()
-	}
-
-	systemctlCommand := "systemctl"
-
-	output, err := exec.Run(systemctlCommand, "status", "--no-block", "kubelet")
-	klog.V(2).Infof("'systemctl status kubelet' output:\n%s", string(output))
-	if err == nil {
-		klog.V(2).Infof("kubelet systemd service already running")
-		return nil
-	}
-
-	klog.Infof("kubelet systemd service not running. Starting")
-	output, err = exec.Run(systemctlCommand, "start", "--no-block", "kubelet")
-	if err != nil {
-		return fmt.Errorf("error starting kubelet: %v\nOutput: %s", err, output)
-	}
-	klog.V(2).Infof("'systemctl start kubelet' output:\n%s", string(output))
 
 	return nil
 }

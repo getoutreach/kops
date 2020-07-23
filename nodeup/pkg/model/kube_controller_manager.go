@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,8 +25,10 @@ import (
 	"k8s.io/kops/pkg/flagbuilder"
 	"k8s.io/kops/pkg/k8scodecs"
 	"k8s.io/kops/pkg/kubemanifest"
+	"k8s.io/kops/pkg/rbac"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/nodetasks"
+	"k8s.io/kops/util/pkg/architectures"
 	"k8s.io/kops/util/pkg/exec"
 	"k8s.io/kops/util/pkg/proxy"
 
@@ -49,12 +51,10 @@ func (b *KubeControllerManagerBuilder) Build(c *fi.ModelBuilderContext) error {
 		return nil
 	}
 
-	// If we're using the CertificateSigner, include the CA Key
+	// Include the CA Key
 	// @TODO: use a per-machine key?  use KMS?
-	if b.useCertificateSigner() {
-		if err := b.BuildPrivateKeyTask(c, fi.CertificateId_CA, "ca.key"); err != nil {
-			return err
-		}
+	if err := b.BuildPrivateKeyTask(c, fi.CertificateIDCA, "ca.key"); err != nil {
+		return err
 	}
 
 	{
@@ -87,14 +87,10 @@ func (b *KubeControllerManagerBuilder) Build(c *fi.ModelBuilderContext) error {
 
 	// Add kubeconfig
 	{
-		// @TODO: Change kubeconfig to be https
-		kubeconfig, err := b.BuildPKIKubeconfig("kube-controller-manager")
-		if err != nil {
-			return err
-		}
+		kubeconfig := b.BuildIssuedKubeconfig("kube-controller-manager", nodetasks.PKIXName{CommonName: rbac.KubeControllerManager}, c)
 		c.AddTask(&nodetasks.File{
 			Path:     "/var/lib/kube-controller-manager/kubeconfig",
-			Contents: fi.NewStringResource(kubeconfig),
+			Contents: kubeconfig,
 			Type:     nodetasks.FileType_File,
 			Mode:     s("0400"),
 		})
@@ -103,18 +99,12 @@ func (b *KubeControllerManagerBuilder) Build(c *fi.ModelBuilderContext) error {
 	return nil
 }
 
-// useCertificateSigner checks to see if we need to use the certificate signer for the controller manager
-func (b *KubeControllerManagerBuilder) useCertificateSigner() bool {
-	// For now, we enable this on 1.6 and later
-	return b.IsKubernetesGTE("1.6")
-}
-
 // buildPod is responsible for building the kubernetes manifest for the controller-manager
 func (b *KubeControllerManagerBuilder) buildPod() (*v1.Pod, error) {
 
 	kcm := b.Cluster.Spec.KubeControllerManager
 	kcm.RootCAFile = filepath.Join(b.PathSrvKubernetes(), "ca.crt")
-	kcm.ServiceAccountPrivateKeyFile = filepath.Join(b.PathSrvKubernetes(), "server.key")
+	kcm.ServiceAccountPrivateKeyFile = filepath.Join(b.PathSrvKubernetes(), "service-account.key")
 
 	flags, err := flagbuilder.BuildFlagsList(kcm)
 	if err != nil {
@@ -129,12 +119,10 @@ func (b *KubeControllerManagerBuilder) buildPod() (*v1.Pod, error) {
 	// Add kubeconfig flag
 	flags = append(flags, "--kubeconfig="+"/var/lib/kube-controller-manager/kubeconfig")
 
-	// Configure CA certificate to be used to sign keys, if we are using CSRs
-	if b.useCertificateSigner() {
-		flags = append(flags, []string{
-			"--cluster-signing-cert-file=" + filepath.Join(b.PathSrvKubernetes(), "ca.crt"),
-			"--cluster-signing-key-file=" + filepath.Join(b.PathSrvKubernetes(), "ca.key")}...)
-	}
+	// Configure CA certificate to be used to sign keys
+	flags = append(flags, []string{
+		"--cluster-signing-cert-file=" + filepath.Join(b.PathSrvKubernetes(), "ca.crt"),
+		"--cluster-signing-key-file=" + filepath.Join(b.PathSrvKubernetes(), "ca.key")}...)
 
 	pod := &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
@@ -162,8 +150,8 @@ func (b *KubeControllerManagerBuilder) buildPod() (*v1.Pod, error) {
 			// Default is different on ContainerOS, see https://github.com/kubernetes/kubernetes/pull/58171
 			volumePluginDir = "/home/kubernetes/flexvolume/"
 
-		case distros.DistributionCoreOS:
-			// The /usr directory is read-only for CoreOS
+		case distros.DistributionFlatcar:
+			// The /usr directory is read-only for Flatcar
 			volumePluginDir = "/var/lib/kubelet/volumeplugins/"
 
 		default:
@@ -174,9 +162,14 @@ func (b *KubeControllerManagerBuilder) buildPod() (*v1.Pod, error) {
 	// Add the volumePluginDir flag if provided in the kubelet spec, or set above based on the OS
 	flags = append(flags, "--flex-volume-plugin-dir="+volumePluginDir)
 
+	image := kcm.Image
+	if b.Architecture != architectures.ArchitectureAmd64 {
+		image = strings.Replace(image, "-amd64", "-"+string(b.Architecture), 1)
+	}
+
 	container := &v1.Container{
 		Name:  "kube-controller-manager",
-		Image: b.Cluster.Spec.KubeControllerManager.Image,
+		Image: image,
 		Env:   proxy.GetProxyEnvVars(b.Cluster.Spec.EgressProxy),
 		LivenessProbe: &v1.Probe{
 			Handler: v1.Handler{

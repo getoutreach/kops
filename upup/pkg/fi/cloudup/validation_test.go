@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
 	api "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/kops/validation"
@@ -39,23 +38,20 @@ func buildDefaultCluster(t *testing.T) *api.Cluster {
 	}
 
 	if len(c.Spec.EtcdClusters) == 0 {
-		zones := sets.NewString()
-		for _, z := range c.Spec.Subnets {
-			zones.Insert(z.Zone)
-		}
-		etcdZones := zones.List()
 
 		for _, etcdCluster := range EtcdClusters {
+
 			etcd := &api.EtcdClusterSpec{}
 			etcd.Name = etcdCluster
-			for _, zone := range etcdZones {
+			for _, subnet := range c.Spec.Subnets {
 				m := &api.EtcdMemberSpec{}
-				m.Name = zone
-				m.InstanceGroup = fi.String(zone)
+				m.Name = subnet.Zone
+				m.InstanceGroup = fi.String("master-" + subnet.Name)
 				etcd.Members = append(etcd.Members, m)
 			}
 			c.Spec.EtcdClusters = append(c.Spec.EtcdClusters, etcd)
 		}
+
 	}
 
 	fullSpec, err := mockedPopulateClusterSpec(c)
@@ -104,12 +100,12 @@ func buildDefaultCluster(t *testing.T) *api.Cluster {
 
 func TestValidateFull_Default_Validates(t *testing.T) {
 	c := buildDefaultCluster(t)
-	if err := validation.ValidateCluster(c, false); err != nil {
+	if errs := validation.ValidateCluster(c, false); len(errs) != 0 {
 		klog.Infof("Cluster: %v", c)
-		t.Fatalf("Validate gave unexpected error (strict=false): %v", err)
+		t.Fatalf("Validate gave unexpected error (strict=false): %v", errs.ToAggregate())
 	}
-	if err := validation.ValidateCluster(c, true); err != nil {
-		t.Fatalf("Validate gave unexpected error (strict=true): %v", err)
+	if errs := validation.ValidateCluster(c, true); len(errs) != 0 {
+		t.Fatalf("Validate gave unexpected error (strict=true): %v", errs.ToAggregate())
 	}
 }
 
@@ -140,17 +136,7 @@ func TestValidateFull_UpdatePolicy_Valid(t *testing.T) {
 func TestValidateFull_UpdatePolicy_Invalid(t *testing.T) {
 	c := buildDefaultCluster(t)
 	c.Spec.UpdatePolicy = fi.String("not-a-real-value")
-	expectErrorFromValidate(t, c, "UpdatePolicy")
-}
-
-func Test_Validate_No_Classic_With_14(t *testing.T) {
-	c := buildDefaultCluster(t)
-	c.Spec.KubernetesVersion = "1.4.1"
-	c.Spec.Networking = &api.NetworkingSpec{
-		Classic: &api.ClassicNetworkingSpec{},
-	}
-
-	expectErrorFromValidate(t, c, "spec.Networking")
+	expectErrorFromValidate(t, c, "spec.updatePolicy")
 }
 
 func Test_Validate_Kubenet_With_14(t *testing.T) {
@@ -188,7 +174,7 @@ func TestValidate_ContainerRegistry_and_ContainerProxy_exclusivity(t *testing.T)
 
 	proxy := "https://proxy.example.com/"
 	c.Spec.Assets.ContainerProxy = &proxy
-	expectErrorFromValidate(t, c, "ContainerProxy cannot be used in conjunction with ContainerRegistry")
+	expectErrorFromValidate(t, c, "containerProxy cannot be used in conjunction with containerRegistry")
 
 	c.Spec.Assets.ContainerRegistry = nil
 	expectNoErrorFromValidate(t, c)
@@ -196,19 +182,19 @@ func TestValidate_ContainerRegistry_and_ContainerProxy_exclusivity(t *testing.T)
 }
 
 func expectErrorFromValidate(t *testing.T, c *api.Cluster, message string) {
-	err := validation.ValidateCluster(c, false)
-	if err == nil {
+	errs := validation.ValidateCluster(c, false)
+	if len(errs) == 0 {
 		t.Fatalf("Expected error from Validate")
 	}
-	actualMessage := fmt.Sprintf("%v", err)
+	actualMessage := fmt.Sprintf("%v", errs.ToAggregate())
 	if !strings.Contains(actualMessage, message) {
 		t.Fatalf("Expected error %q, got %q", message, actualMessage)
 	}
 }
 
 func expectNoErrorFromValidate(t *testing.T, c *api.Cluster) {
-	err := validation.ValidateCluster(c, false)
-	if err != nil {
-		t.Fatalf("Unexpected error from Validate: %v", err)
+	errs := validation.ValidateCluster(c, false)
+	if len(errs) != 0 {
+		t.Fatalf("Unexpected error from Validate: %v", errs.ToAggregate())
 	}
 }

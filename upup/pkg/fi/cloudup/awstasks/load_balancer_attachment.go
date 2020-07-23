@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -146,9 +146,9 @@ func (_ *LoadBalancerAttachment) RenderAWS(t *awsup.AWSAPITarget, a, e, changes 
 }
 
 type terraformLoadBalancerAttachment struct {
-	ELB              *terraform.Literal `json:"elb"`
-	Instance         *terraform.Literal `json:"instance,omitempty"`
-	AutoscalingGroup *terraform.Literal `json:"autoscaling_group_name,omitempty"`
+	ELB              *terraform.Literal `json:"elb" cty:"elb"`
+	Instance         *terraform.Literal `json:"instance,omitempty" cty:"instance"`
+	AutoscalingGroup *terraform.Literal `json:"autoscaling_group_name,omitempty" cty:"autoscaling_group_name"`
 }
 
 func (_ *LoadBalancerAttachment) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *LoadBalancerAttachment) error {

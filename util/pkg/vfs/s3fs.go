@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -106,6 +106,77 @@ func (p *S3Path) Remove() error {
 	return nil
 }
 
+func (p *S3Path) RemoveAllVersions() error {
+	client, err := p.client()
+	if err != nil {
+		return err
+	}
+
+	klog.V(8).Infof("removing all versions of file %s", p)
+
+	request := &s3.ListObjectVersionsInput{
+		Bucket: aws.String(p.bucket),
+		Prefix: aws.String(p.key),
+	}
+
+	var versions []*s3.ObjectVersion
+	var deleteMarkers []*s3.DeleteMarkerEntry
+	if err := client.ListObjectVersionsPages(request, func(page *s3.ListObjectVersionsOutput, lastPage bool) bool {
+		versions = append(versions, page.Versions...)
+		deleteMarkers = append(deleteMarkers, page.DeleteMarkers...)
+		return true
+	}); err != nil {
+		return fmt.Errorf("error listing all versions of file %s: %v", p, err)
+	}
+
+	if len(versions) == 0 && len(deleteMarkers) == 0 {
+		return os.ErrNotExist
+	}
+
+	var objects []*s3.ObjectIdentifier
+	for _, version := range versions {
+		klog.V(8).Infof("removing file %s version %q", p, aws.StringValue(version.VersionId))
+		file := s3.ObjectIdentifier{
+			Key:       version.Key,
+			VersionId: version.VersionId,
+		}
+		objects = append(objects, &file)
+	}
+	for _, version := range deleteMarkers {
+		klog.V(8).Infof("removing marker %s version %q", p, aws.StringValue(version.VersionId))
+		marker := s3.ObjectIdentifier{
+			Key:       version.Key,
+			VersionId: version.VersionId,
+		}
+		objects = append(objects, &marker)
+	}
+
+	for len(objects) > 0 {
+		request := &s3.DeleteObjectsInput{
+			Bucket: aws.String(p.bucket),
+			Delete: &s3.Delete{},
+		}
+
+		// DeleteObjects can only process 1000 objects per call
+		if len(objects) > 1000 {
+			request.Delete.Objects = objects[:1000]
+			objects = objects[1000:]
+		} else {
+			request.Delete.Objects = objects
+			objects = nil
+		}
+
+		klog.V(8).Infof("removing %d file/marker versions\n", len(request.Delete.Objects))
+
+		_, err = client.DeleteObjects(request)
+		if err != nil {
+			return fmt.Errorf("error removing %d file/marker versions: %v", len(request.Delete.Objects), err)
+		}
+	}
+
+	return nil
+}
+
 func (p *S3Path) Join(relativePath ...string) Path {
 	args := []string{p.key}
 	args = append(args, relativePath...)
@@ -169,9 +240,8 @@ func (p *S3Path) WriteFile(data io.ReadSeeker, aclObj ACL) error {
 	if err != nil {
 		if acl != "" {
 			return fmt.Errorf("error writing %s (with ACL=%q): %v", p, acl, err)
-		} else {
-			return fmt.Errorf("error writing %s: %v", p, err)
 		}
+		return fmt.Errorf("error writing %s: %v", p, err)
 	}
 
 	return nil

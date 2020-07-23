@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,9 +37,10 @@ func (m *MockEC2) CreateVolume(request *ec2.CreateVolumeInput) (*ec2.Volume, err
 	}
 
 	n := len(m.Volumes) + 1
+	id := fmt.Sprintf("vol-%d", n)
 
 	volume := &ec2.Volume{
-		VolumeId:         s(fmt.Sprintf("vol-%d", n)),
+		VolumeId:         s(id),
 		AvailabilityZone: request.AvailabilityZone,
 		Encrypted:        request.Encrypted,
 		Iops:             request.Iops,
@@ -49,19 +50,15 @@ func (m *MockEC2) CreateVolume(request *ec2.CreateVolumeInput) (*ec2.Volume, err
 		VolumeType:       request.VolumeType,
 	}
 
-	for _, tags := range request.TagSpecifications {
-		for _, tag := range tags.Tags {
-			m.addTag(*volume.VolumeId, tag)
-		}
-	}
 	if m.Volumes == nil {
 		m.Volumes = make(map[string]*ec2.Volume)
 	}
 	m.Volumes[*volume.VolumeId] = volume
 
+	m.addTags(id, tagSpecificationsToTags(request.TagSpecifications, ec2.ResourceTypeVolume)...)
+
 	copy := *volume
 	copy.Tags = m.getTags(ec2.ResourceTypeVolume, *volume.VolumeId)
-
 	// TODO: a few fields
 	// // Information about the volume attachments.
 	// Attachments []*VolumeAttachment `locationName:"attachmentSet" locationNameList:"item" type:"list"`

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import (
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awstasks"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/aws"
+	"k8s.io/legacy-cloud-providers/aws"
 )
 
 // NetworkModelBuilder configures network objects
@@ -64,10 +64,10 @@ func (b *NetworkModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			Tags:             vpcTags,
 		}
 
-		if sharedVPC && b.IsKubernetesGTE("1.5") {
-			// If we're running k8s 1.5, and we have e.g.  --kubelet-preferred-address-types=InternalIP,Hostname,ExternalIP,LegacyHostIP
-			// then we don't need EnableDNSHostnames any more
-			klog.V(4).Infof("Kubernetes version %q; skipping EnableDNSHostnames requirement on VPC", b.KubernetesVersion())
+		if sharedVPC {
+			// If we have e.g.  --kubelet-preferred-address-types=InternalIP,Hostname,ExternalIP,LegacyHostIP
+			// then we don't need EnableDNSHostnames
+			klog.V(4).Info("Skipping EnableDNSHostnames requirement on VPC")
 		} else {
 			// In theory we don't need to enable it for >= 1.5,
 			// but seems safer to stick with existing behaviour
@@ -98,6 +98,7 @@ func (b *NetworkModelBuilder) Build(c *fi.ModelBuilderContext) error {
 		}
 	}
 
+	// TODO: would be good to create these as shared, to verify them
 	if !sharedVPC {
 		dhcp := &awstasks.DHCPOptions{
 			Name:              s(b.ClusterName()),
@@ -120,8 +121,6 @@ func (b *NetworkModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			VPC:         b.LinkToVPC(),
 			DHCPOptions: dhcp,
 		})
-	} else {
-		// TODO: would be good to create these as shared, to verify them
 	}
 
 	allSubnetsUnmanaged := true

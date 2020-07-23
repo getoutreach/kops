@@ -25,25 +25,19 @@ import (
 	"k8s.io/kops/pkg/assets"
 )
 
-type ClusterParams struct {
-	CloudProvider     string
-	KubernetesVersion string
-	UpdatePolicy      string
-}
-
 func buildCluster() *api.Cluster {
 
 	return &api.Cluster{
 		Spec: api.ClusterSpec{
 			CloudProvider:     "aws",
-			KubernetesVersion: "v1.4.0",
+			KubernetesVersion: "v1.14.0",
+			KubeAPIServer:     &api.KubeAPIServerConfig{},
 		},
 	}
 }
 
-func Test_Build_KCM_Builder_Lower_Version(t *testing.T) {
-	versions := []string{"v1.4.0", "v1.4.7", "v1.5.0"}
-
+func Test_Build_KCM_Builder(t *testing.T) {
+	versions := []string{"v1.11.0", "v2.4.0"}
 	for _, v := range versions {
 
 		c := buildCluster()
@@ -51,33 +45,7 @@ func Test_Build_KCM_Builder_Lower_Version(t *testing.T) {
 		b := assets.NewAssetBuilder(c, "")
 
 		kcm := &KubeControllerManagerOptionsBuilder{
-			Context: &OptionsContext{
-				AssetBuilder: b,
-			},
-		}
-
-		err := kcm.BuildOptions(&c.Spec)
-		if err != nil {
-			t.Fatalf("unexpected error from BuildOptions: %v", err)
-		}
-
-		if c.Spec.KubeControllerManager.AttachDetachReconcileSyncPeriod != nil {
-			t.Fatalf("AttachDetachReconcileSyncPeriod should not be set for old kubernetes version %s", c.Spec.KubernetesVersion)
-		}
-	}
-
-}
-
-func Test_Build_KCM_Builder_High_Enough_Version(t *testing.T) {
-	versions := []string{"v1.4.8", "v1.5.2", "v1.9.0", "v2.4.0"}
-	for _, v := range versions {
-
-		c := buildCluster()
-		c.Spec.KubernetesVersion = v
-		b := assets.NewAssetBuilder(c, "")
-
-		kcm := &KubeControllerManagerOptionsBuilder{
-			Context: &OptionsContext{
+			OptionsContext: &OptionsContext{
 				AssetBuilder: b,
 			},
 		}
@@ -97,11 +65,10 @@ func Test_Build_KCM_Builder_High_Enough_Version(t *testing.T) {
 func Test_Build_KCM_Builder_Change_Duration(t *testing.T) {
 
 	c := buildCluster()
-	c.Spec.KubernetesVersion = "v1.5.2"
 	b := assets.NewAssetBuilder(c, "")
 
 	kcm := &KubeControllerManagerOptionsBuilder{
-		Context: &OptionsContext{
+		OptionsContext: &OptionsContext{
 			AssetBuilder: b,
 		},
 	}

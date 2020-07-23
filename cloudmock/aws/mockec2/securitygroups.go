@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -41,17 +41,22 @@ func (m *MockEC2) CreateSecurityGroup(request *ec2.CreateSecurityGroupInput) (*e
 
 	m.securityGroupNumber++
 	n := m.securityGroupNumber
+	id := fmt.Sprintf("sg-%d", n)
+	tags := tagSpecificationsToTags(request.TagSpecifications, ec2.ResourceTypeSecurityGroup)
 
 	sg := &ec2.SecurityGroup{
 		GroupName:   request.GroupName,
-		GroupId:     s(fmt.Sprintf("sg-%d", n)),
+		GroupId:     s(id),
 		VpcId:       request.VpcId,
 		Description: request.Description,
+		Tags:        tags,
 	}
 	if m.SecurityGroups == nil {
 		m.SecurityGroups = make(map[string]*ec2.SecurityGroup)
 	}
 	m.SecurityGroups[*sg.GroupId] = sg
+
+	m.addTags(id, tags...)
 
 	response := &ec2.CreateSecurityGroupOutput{
 		GroupId: sg.GroupId,
@@ -260,9 +265,7 @@ func (m *MockEC2) AuthorizeSecurityGroupEgress(request *ec2.AuthorizeSecurityGro
 		sg.IpPermissionsEgress = append(sg.IpPermissionsEgress, p)
 	}
 
-	for _, p := range request.IpPermissions {
-		sg.IpPermissionsEgress = append(sg.IpPermissionsEgress, p)
-	}
+	sg.IpPermissionsEgress = append(sg.IpPermissionsEgress, request.IpPermissions...)
 
 	// TODO: We need to fold permissions
 
@@ -318,9 +321,7 @@ func (m *MockEC2) AuthorizeSecurityGroupIngress(request *ec2.AuthorizeSecurityGr
 		sg.IpPermissions = append(sg.IpPermissions, p)
 	}
 
-	for _, p := range request.IpPermissions {
-		sg.IpPermissions = append(sg.IpPermissions, p)
-	}
+	sg.IpPermissions = append(sg.IpPermissions, request.IpPermissions...)
 
 	// TODO: We need to fold permissions
 

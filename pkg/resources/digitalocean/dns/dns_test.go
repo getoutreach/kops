@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package dns
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io/ioutil"
 	"net/http"
 	"testing"
 
 	"github.com/digitalocean/godo"
-	"github.com/digitalocean/godo/context"
 
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider/rrstype"
 )
@@ -369,6 +369,8 @@ func TestNewResourceRecordSet(t *testing.T) {
 }
 
 func TestResourceRecordChangeset(t *testing.T) {
+	ctx := context.Background()
+
 	fake := &fakeDomainService{}
 	fake.recordsFunc = func(ctx context.Context, domain string, listOpts *godo.ListOptions) ([]godo.DomainRecord, *godo.Response, error) {
 		domainRecords := []godo.DomainRecord{
@@ -456,7 +458,7 @@ func TestResourceRecordChangeset(t *testing.T) {
 	record = rrset.New("to-upsert", []string{"127.0.0.1"}, 3600, rrstype.A)
 	changeset.Upsert(record)
 
-	err = changeset.Apply()
+	err = changeset.Apply(ctx)
 	if err != nil {
 		t.Errorf("error applying changeset: %v", err)
 	}

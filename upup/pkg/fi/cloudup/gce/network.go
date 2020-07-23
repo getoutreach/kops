@@ -17,12 +17,12 @@ limitations under the License.
 package gce
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"net"
 
-	context "golang.org/x/net/context"
-	compute "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/klog"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/upup/pkg/fi"
@@ -66,9 +66,7 @@ func performNetworkAssignmentsIPAliases(ctx context.Context, c *kops.Cluster, cl
 
 	var regions []*compute.Region
 	if err := cloud.Compute().Regions.List(cloud.Project()).Pages(ctx, func(p *compute.RegionList) error {
-		for _, r := range p.Items {
-			regions = append(regions, r)
-		}
+		regions = append(regions, p.Items...)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("error listing Regions: %v", err)
@@ -89,9 +87,7 @@ func performNetworkAssignmentsIPAliases(ctx context.Context, c *kops.Cluster, cl
 	var subnets []*compute.Subnetwork
 	for _, r := range regions {
 		if err := cloud.Compute().Subnetworks.List(cloud.Project(), r.Name).Pages(ctx, func(p *compute.SubnetworkList) error {
-			for _, s := range p.Items {
-				subnets = append(subnets, s)
-			}
+			subnets = append(subnets, p.Items...)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("error listing Subnetworks: %v", err)

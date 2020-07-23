@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,8 +27,8 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/kops/cmd/kops/util"
 	"k8s.io/kops/upup/pkg/fi"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -66,6 +67,8 @@ func NewCmdCreateSecretDockerConfig(f *util.Factory, out io.Writer) *cobra.Comma
 		Long:    createSecretDockerconfigLong,
 		Example: createSecretDockerconfigExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			if len(args) != 0 {
 				exitWithError(fmt.Errorf("syntax: -f <DockerConfigPath>"))
 			}
@@ -77,7 +80,7 @@ func NewCmdCreateSecretDockerConfig(f *util.Factory, out io.Writer) *cobra.Comma
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err = RunCreateSecretDockerConfig(f, os.Stdout, options)
+			err = RunCreateSecretDockerConfig(ctx, f, os.Stdout, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -90,7 +93,7 @@ func NewCmdCreateSecretDockerConfig(f *util.Factory, out io.Writer) *cobra.Comma
 	return cmd
 }
 
-func RunCreateSecretDockerConfig(f *util.Factory, out io.Writer, options *CreateSecretDockerConfigOptions) error {
+func RunCreateSecretDockerConfig(ctx context.Context, f *util.Factory, out io.Writer, options *CreateSecretDockerConfigOptions) error {
 	if options.DockerConfigPath == "" {
 		return fmt.Errorf("docker config path is required (use -f)")
 	}
@@ -99,7 +102,7 @@ func RunCreateSecretDockerConfig(f *util.Factory, out io.Writer, options *Create
 		return fmt.Errorf("error creating docker config secret: %v", err)
 	}
 
-	cluster, err := GetCluster(f, options.ClusterName)
+	cluster, err := GetCluster(ctx, f, options.ClusterName)
 	if err != nil {
 		return err
 	}

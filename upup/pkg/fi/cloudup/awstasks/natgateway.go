@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -307,7 +307,9 @@ func (_ *NatGateway) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *NatGateway)
 
 		klog.V(2).Infof("Creating Nat Gateway")
 
-		request := &ec2.CreateNatGatewayInput{}
+		request := &ec2.CreateNatGatewayInput{
+			TagSpecifications: awsup.EC2TagSpecification(ec2.ResourceTypeNatgateway, e.Tags),
+		}
 		request.AllocationId = e.ElasticIP.ID
 		request.SubnetId = e.Subnet.ID
 		response, err := t.Cloud.EC2().CreateNatGateway(request)
@@ -360,9 +362,9 @@ func (_ *NatGateway) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *NatGateway)
 }
 
 type terraformNATGateway struct {
-	AllocationID *terraform.Literal `json:"allocation_id,omitempty"`
-	SubnetID     *terraform.Literal `json:"subnet_id,omitempty"`
-	Tag          map[string]string  `json:"tags,omitempty"`
+	AllocationID *terraform.Literal `json:"allocation_id,omitempty" cty:"allocation_id"`
+	SubnetID     *terraform.Literal `json:"subnet_id,omitempty" cty:"subnet_id"`
+	Tag          map[string]string  `json:"tags,omitempty" cty:"tags"`
 }
 
 func (_ *NatGateway) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *NatGateway) error {
@@ -399,7 +401,7 @@ func (e *NatGateway) TerraformLink() *terraform.Literal {
 type cloudformationNATGateway struct {
 	AllocationID *cloudformation.Literal `json:"AllocationId,omitempty"`
 	SubnetID     *cloudformation.Literal `json:"SubnetId,omitempty"`
-	Tag          map[string]string       `json:"tags,omitempty"`
+	Tags         []cloudformationTag     `json:"Tags,omitempty"`
 }
 
 func (_ *NatGateway) RenderCloudformation(t *cloudformation.CloudformationTarget, a, e, changes *NatGateway) error {
@@ -412,13 +414,13 @@ func (_ *NatGateway) RenderCloudformation(t *cloudformation.CloudformationTarget
 		return nil
 	}
 
-	tf := &cloudformationNATGateway{
+	cf := &cloudformationNATGateway{
 		AllocationID: e.ElasticIP.CloudformationAllocationID(),
 		SubnetID:     e.Subnet.CloudformationLink(),
-		Tag:          e.Tags,
+		Tags:         buildCloudformationTags(e.Tags),
 	}
 
-	return t.RenderResource("AWS::EC2::NatGateway", *e.Name, tf)
+	return t.RenderResource("AWS::EC2::NatGateway", *e.Name, cf)
 }
 
 func (e *NatGateway) CloudformationLink() *cloudformation.Literal {

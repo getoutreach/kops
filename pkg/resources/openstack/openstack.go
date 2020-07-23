@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,8 +28,6 @@ type clusterDiscoveryOS struct {
 	cloud       fi.Cloud
 	osCloud     openstack.OpenstackCloud
 	clusterName string
-
-	zones []string
 }
 
 // ListResources lists the OpenStack resources kops manages

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,28 +17,80 @@ limitations under the License.
 package util
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
+
+	"github.com/blang/semver/v4"
 )
 
 func Test_ParseKubernetesVersion(t *testing.T) {
-	grid := map[string]string{
-		"1.3.7":         "1.3.7",
-		"v1.4.0-beta.8": "1.4.0-beta.8",
-		"1.5.0":         "1.5.0",
-		"https://storage.googleapis.com/kubernetes-release-dev/ci/v1.4.0-alpha.2.677+ea69570f61af8e/": "1.4.0",
+	cases := []struct {
+		version       string
+		expected      *semver.Version
+		expectedError error
+	}{
+		{
+			version: "1.3.7",
+			expected: &semver.Version{
+				Major: 1,
+				Minor: 3,
+				Patch: 7,
+			},
+		},
+		{
+			version: "v1.4.0-beta.8",
+			expected: &semver.Version{
+				Major: 1,
+				Minor: 4,
+				Patch: 0,
+				Pre: []semver.PRVersion{
+					{
+						VersionStr: "beta",
+					},
+					{
+						VersionNum: 8,
+						IsNum:      true,
+					},
+				},
+			},
+		},
+		{
+			version: "1.5.0",
+			expected: &semver.Version{
+				Major: 1,
+				Minor: 5,
+				Patch: 0,
+			},
+		},
+		{
+			version: "https://storage.googleapis.com/kubernetes-release-dev/ci/v1.4.0-alpha.2.677+ea69570f61af8e/",
+			expected: &semver.Version{
+				Major: 1,
+				Minor: 4,
+				Patch: 0,
+			},
+		},
+		{
+			version:       "",
+			expectedError: fmt.Errorf("unable to parse kubernetes version \"\""),
+		},
+		{
+			version:       "abc",
+			expectedError: fmt.Errorf("unable to parse kubernetes version \"abc\""),
+		},
 	}
-	for version, expected := range grid {
-		sv, err := ParseKubernetesVersion(version)
-		if err != nil {
-			t.Errorf("ParseKubernetesVersion error parsing %q: %v", version, err)
-		}
-
-		actual := sv.String()
-		if actual != expected {
-			t.Errorf("version mismatch: %q -> %q but expected %q", version, actual, expected)
-		}
+	for _, c := range cases {
+		t.Run(c.version, func(t *testing.T) {
+			actual, err := ParseKubernetesVersion(c.version)
+			if !reflect.DeepEqual(err, c.expectedError) {
+				t.Errorf("ParseKubernetesVersion error parsing %q: %v", c.version, err)
+			}
+			if !reflect.DeepEqual(actual, c.expected) {
+				t.Errorf("version mismatch: %q -> %q but expected %q", c.version, actual, c.expected)
+			}
+		})
 	}
-
 }
 
 func Test_IsKubernetesGTEWithPatch(t *testing.T) {

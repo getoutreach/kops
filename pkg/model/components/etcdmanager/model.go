@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,18 +17,12 @@ limitations under the License.
 package etcdmanager
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/yaml"
-	scheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/assets"
@@ -37,16 +31,17 @@ import (
 	"k8s.io/kops/pkg/k8scodecs"
 	"k8s.io/kops/pkg/kubemanifest"
 	"k8s.io/kops/pkg/model"
+	"k8s.io/kops/pkg/wellknownports"
 	"k8s.io/kops/upup/pkg/fi"
+	"k8s.io/kops/upup/pkg/fi/cloudup/aliup"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
 	"k8s.io/kops/upup/pkg/fi/cloudup/do"
 	"k8s.io/kops/upup/pkg/fi/cloudup/gce"
+	"k8s.io/kops/upup/pkg/fi/cloudup/openstack"
 	"k8s.io/kops/upup/pkg/fi/fitasks"
+	"k8s.io/kops/util/pkg/env"
 	"k8s.io/kops/util/pkg/exec"
-	"k8s.io/kops/util/pkg/proxy"
 )
-
-const metaFilename = "_etcd_backup.meta"
 
 // EtcdManagerBuilder builds the manifest for the etcd-manager
 type EtcdManagerBuilder struct {
@@ -102,40 +97,55 @@ func (b *EtcdManagerBuilder) Build(c *fi.ModelBuilderContext) error {
 			return err
 		}
 
-		format := string(fi.KeysetFormatV1Alpha2)
+		// Ensure a unique backup location for each etcd cluster
+		// if a backupStore is not specified.
+		var location string
+		if backupStore == "" {
+			location = "backups/etcd/" + etcdCluster.Name
+		}
 
 		c.AddTask(&fitasks.ManagedFile{
 			Contents:  fi.WrapResource(fi.NewBytesResource(d)),
 			Lifecycle: b.Lifecycle,
+			Base:      fi.String(backupStore),
 			// TODO: We need this to match the backup base (currently)
-			Location: fi.String("backups/etcd/" + etcdCluster.Name + "/control/etcd-cluster-spec"),
+			Location: fi.String(location + "/control/etcd-cluster-spec"),
 			Name:     fi.String("etcd-cluster-spec-" + name),
 		})
 
 		// We create a CA keypair to enable secure communication
 		c.AddTask(&fitasks.Keypair{
-			Name:    fi.String("etcd-manager-ca-" + etcdCluster.Name),
-			Subject: "cn=etcd-manager-ca-" + etcdCluster.Name,
-			Type:    "ca",
-			Format:  format,
+			Name:      fi.String("etcd-manager-ca-" + etcdCluster.Name),
+			Lifecycle: b.Lifecycle,
+			Subject:   "cn=etcd-manager-ca-" + etcdCluster.Name,
+			Type:      "ca",
 		})
 
 		// We create a CA for etcd peers and a separate one for clients
 		c.AddTask(&fitasks.Keypair{
-			Name:    fi.String("etcd-peers-ca-" + etcdCluster.Name),
-			Subject: "cn=etcd-peers-ca-" + etcdCluster.Name,
-			Type:    "ca",
-			Format:  format,
+			Name:      fi.String("etcd-peers-ca-" + etcdCluster.Name),
+			Lifecycle: b.Lifecycle,
+			Subject:   "cn=etcd-peers-ca-" + etcdCluster.Name,
+			Type:      "ca",
 		})
 
 		// Because API server can only have a single client-cert, we need to share a client CA
 		if err := c.EnsureTask(&fitasks.Keypair{
-			Name:    fi.String("etcd-clients-ca"),
-			Subject: "cn=etcd-clients-ca",
-			Type:    "ca",
-			Format:  format,
+			Name:      fi.String("etcd-clients-ca"),
+			Lifecycle: b.Lifecycle,
+			Subject:   "cn=etcd-clients-ca",
+			Type:      "ca",
 		}); err != nil {
 			return err
+		}
+
+		if etcdCluster.Name == "cilium" {
+			c.AddTask(&fitasks.Keypair{
+				Name:      fi.String("etcd-clients-ca-cilium"),
+				Lifecycle: b.Lifecycle,
+				Subject:   "cn=etcd-clients-ca-cilium",
+				Type:      "ca",
+			})
 		}
 	}
 
@@ -151,35 +161,6 @@ func (b *EtcdManagerBuilder) buildManifest(etcdCluster *kops.EtcdClusterSpec) (*
 	return b.buildPod(etcdCluster)
 }
 
-// parseManifest parses a set of objects from a []byte
-func parseManifest(data []byte) ([]runtime.Object, error) {
-	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
-	deser := scheme.Codecs.UniversalDeserializer()
-
-	var objects []runtime.Object
-
-	for {
-		ext := runtime.RawExtension{}
-		if err := decoder.Decode(&ext); err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Fprintf(os.Stderr, "%s", string(data))
-			klog.Infof("manifest: %s", string(data))
-			return nil, fmt.Errorf("error parsing manifest: %v", err)
-		}
-
-		obj, _, err := deser.Decode([]byte(ext.Raw), nil, nil)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing object in manifest: %v", err)
-		}
-
-		objects = append(objects, obj)
-	}
-
-	return objects, nil
-}
-
 // Until we introduce the bundle, we hard-code the manifest
 var defaultManifest = `
 apiVersion: v1
@@ -189,7 +170,7 @@ metadata:
   namespace: kube-system
 spec:
   containers:
-  - image: kopeio/etcd-manager:3.0.20190801
+  - image: kopeio/etcd-manager:3.0.20200531
     name: etcd-manager
     resources:
       requests:
@@ -202,9 +183,6 @@ spec:
     # TODO: Would be nice to scope this more tightly, but needed for volume mounting
     - mountPath: /rootfs
       name: rootfs
-    # We write artificial hostnames into etc hosts for the etcd nodes, so they have stable names
-    - mountPath: /etc/hosts
-      name: hosts
     - mountPath: /etc/kubernetes/pki/etcd-manager
       name: pki
   hostNetwork: true
@@ -214,10 +192,6 @@ spec:
       path: /
       type: Directory
     name: rootfs
-  - hostPath:
-      path: /etc/hosts
-      type: File
-    name: hosts
   - hostPath:
       path: /etc/kubernetes/pki/etcd-manager
       type: DirectoryOrCreate
@@ -236,7 +210,7 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 	manifest = []byte(defaultManifest)
 
 	{
-		objects, err := parseManifest(manifest)
+		objects, err := model.ParseManifest(manifest)
 		if err != nil {
 			return nil, err
 		}
@@ -260,6 +234,18 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 		}
 	}
 
+	// With etcd-manager the hosts changes are self-contained, so
+	// we don't need to share /etc/hosts.  By not sharing we avoid
+	// (1) the temptation to address etcd directly and (2)
+	// problems of concurrent updates to /etc/hosts being hard
+	// from within a container (because locking is very difficult
+	// across bind mounts).
+	//
+	// Introduced with 1.17 to avoid changing existing versions.
+	if b.IsKubernetesLT("1.17") {
+		kubemanifest.MapEtcHosts(pod, container, false)
+	}
+
 	// Remap image via AssetBuilder
 	{
 		remapped, err := b.AssetBuilder.RemapImage(container.Image)
@@ -271,6 +257,7 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 
 	etcdInsecure := !b.UseEtcdTLS()
 
+	clientHost := "__name__"
 	clientPort := 4001
 
 	clusterName := "etcd-" + etcdCluster.Name
@@ -287,9 +274,9 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 	pod.Labels["k8s-app"] = pod.Name
 
 	// TODO: Use a socket file for the quarantine port
-	quarantinedClientPort := 3994
+	quarantinedClientPort := wellknownports.EtcdMainQuarantinedClientPort
 
-	grpcPort := 3996
+	grpcPort := wellknownports.EtcdMainGRPC
 
 	// The dns suffix logic mirrors the existing logic, so we should be compatible with existing clusters
 	// (etcd makes it difficult to change peer urls, treating it as a cluster event, for reasons unknown)
@@ -311,9 +298,14 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 	case "events":
 		clientPort = 4002
 		peerPort = 2381
-		grpcPort = 3997
-		quarantinedClientPort = 3995
-
+		grpcPort = wellknownports.EtcdEventsGRPC
+		quarantinedClientPort = wellknownports.EtcdEventsQuarantinedClientPort
+	case "cilium":
+		clientPort = 4003
+		peerPort = 2382
+		grpcPort = wellknownports.EtcdCiliumGRPC
+		quarantinedClientPort = wellknownports.EtcdCiliumQuarantinedClientPort
+		clientHost = b.Cluster.Spec.MasterInternalName
 	default:
 		return nil, fmt.Errorf("unknown etcd cluster key %q", etcdCluster.Name)
 	}
@@ -344,7 +336,7 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 		scheme := "https"
 
 		config.PeerUrls = fmt.Sprintf("%s://__name__:%d", scheme, peerPort)
-		config.ClientUrls = fmt.Sprintf("%s://__name__:%d", scheme, clientPort)
+		config.ClientUrls = fmt.Sprintf("%s://%s:%d", scheme, clientHost, clientPort)
 		config.QuarantineClientUrls = fmt.Sprintf("%s://__name__:%d", scheme, quarantinedClientPort)
 
 		// TODO: We need to wire these into the etcd-manager spec
@@ -371,6 +363,16 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 			}
 			config.VolumeNameTag = awsup.TagNameEtcdClusterPrefix + etcdCluster.Name
 
+		case kops.CloudProviderALI:
+			config.VolumeProvider = "alicloud"
+
+			config.VolumeTag = []string{
+				fmt.Sprintf("kubernetes.io/cluster/%s=owned", b.Cluster.Name),
+				aliup.TagNameEtcdClusterPrefix + etcdCluster.Name,
+				aliup.TagNameRolePrefix + "master=1",
+			}
+			config.VolumeNameTag = aliup.TagNameEtcdClusterPrefix + etcdCluster.Name
+
 		case kops.CloudProviderGCE:
 			config.VolumeProvider = "gce"
 
@@ -384,12 +386,24 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 		case kops.CloudProviderDO:
 			config.VolumeProvider = "do"
 
+			// DO does not support . in tags / names
+			safeClusterName := do.SafeClusterName(b.Cluster.Name)
+
 			config.VolumeTag = []string{
-				fmt.Sprintf("kubernetes.io/cluster/%s=owned", b.Cluster.Name),
-				do.TagNameEtcdClusterPrefix + etcdCluster.Name,
-				do.TagNameRolePrefix + "master=1",
+				fmt.Sprintf("%s=%s", do.TagKubernetesClusterNamePrefix, safeClusterName),
+				do.TagKubernetesClusterIndex,
 			}
 			config.VolumeNameTag = do.TagNameEtcdClusterPrefix + etcdCluster.Name
+
+		case kops.CloudProviderOpenstack:
+			config.VolumeProvider = "openstack"
+
+			config.VolumeTag = []string{
+				openstack.TagNameEtcdClusterPrefix + etcdCluster.Name,
+				openstack.TagNameRolePrefix + "master=1",
+				fmt.Sprintf("%s=%s", openstack.TagClusterName, b.Cluster.Name),
+			}
+			config.VolumeNameTag = openstack.TagNameEtcdClusterPrefix + etcdCluster.Name
 
 		default:
 			return nil, fmt.Errorf("CloudProvider %q not supported with etcd-manager", b.Cluster.Spec.CloudProvider)
@@ -436,9 +450,41 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 				},
 			},
 		})
+
+		if fi.BoolValue(b.Cluster.Spec.UseHostCertificates) {
+			container.VolumeMounts = append(container.VolumeMounts, v1.VolumeMount{
+				Name:      "etc-ssl-certs",
+				MountPath: "/etc/ssl/certs",
+				ReadOnly:  true,
+			})
+			hostPathDirectoryOrCreate := v1.HostPathDirectoryOrCreate
+			pod.Spec.Volumes = append(pod.Spec.Volumes, v1.Volume{
+				Name: "etc-ssl-certs",
+				VolumeSource: v1.VolumeSource{
+					HostPath: &v1.HostPathVolumeSource{
+						Path: "/etc/ssl/certs",
+						Type: &hostPathDirectoryOrCreate,
+					},
+				},
+			})
+		}
 	}
 
-	container.Env = proxy.GetProxyEnvVars(b.Cluster.Spec.EgressProxy)
+	envMap := env.BuildSystemComponentEnvVars(&b.Cluster.Spec)
+
+	container.Env = envMap.ToEnvVars()
+
+	if etcdCluster.Manager != nil && len(etcdCluster.Manager.Env) > 0 {
+		for _, envVar := range etcdCluster.Manager.Env {
+			klog.Warningf("overloading ENV var in manifest %s with %s=%s", bundle, envVar.Name, envVar.Value)
+			configOverwrite := v1.EnvVar{
+				Name:  envVar.Name,
+				Value: envVar.Value,
+			}
+
+			container.Env = append(container.Env, configOverwrite)
+		}
+	}
 
 	{
 		foundPKI := false

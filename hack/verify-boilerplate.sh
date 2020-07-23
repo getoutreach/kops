@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2014 The Kubernetes Authors.
+# Copyright 2019 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-. $(dirname "${BASH_SOURCE}")/common.sh
+. "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-boiler="${KUBE_ROOT}/hack/boilerplate/boilerplate.py $@"
+boiler="${KOPS_ROOT}/hack/boilerplate/boilerplate.py $@"
 
 files_need_boilerplate=( `${boiler}` )
 
@@ -24,7 +24,7 @@ if [[ -z ${files_need_boilerplate+x} ]]; then
     exit
 fi
 
-TO_REMOVE=(${PWD}/federation/model/bindata.go ${PWD}/upup/models/bindata.go)
+TO_REMOVE=(${KOPS_ROOT}/federation/model/bindata.go ${KOPS_ROOT}/upup/models/bindata.go)
 TEMP_ARRAY=()
 
 for pkg in "${files_need_boilerplate[@]}"; do

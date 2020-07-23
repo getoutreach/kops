@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,23 +21,23 @@ import (
 	"strings"
 	"testing"
 
-	api "k8s.io/kops/pkg/apis/kops"
+	kopsapi "k8s.io/kops/pkg/apis/kops"
 )
 
-func buildMinimalNodeInstanceGroup(subnets ...string) *api.InstanceGroup {
-	g := &api.InstanceGroup{}
+func buildMinimalNodeInstanceGroup(subnets ...string) *kopsapi.InstanceGroup {
+	g := &kopsapi.InstanceGroup{}
 	g.ObjectMeta.Name = "nodes"
-	g.Spec.Role = api.InstanceGroupRoleNode
+	g.Spec.Role = kopsapi.InstanceGroupRoleNode
 	g.Spec.Subnets = subnets
 
 	return g
 }
 
-func buildMinimalMasterInstanceGroup(subnets ...string) *api.InstanceGroup {
-	g := &api.InstanceGroup{}
-	g.ObjectMeta.Name = "master"
-	g.Spec.Role = api.InstanceGroupRoleMaster
-	g.Spec.Subnets = subnets
+func buildMinimalMasterInstanceGroup(subnet string) *kopsapi.InstanceGroup {
+	g := &kopsapi.InstanceGroup{}
+	g.ObjectMeta.Name = "master-" + subnet
+	g.Spec.Role = kopsapi.InstanceGroupRoleMaster
+	g.Spec.Subnets = []string{subnet}
 
 	return g
 }
@@ -47,9 +47,9 @@ func TestPopulateInstanceGroup_Name_Required(t *testing.T) {
 	g := buildMinimalNodeInstanceGroup()
 	g.ObjectMeta.Name = ""
 
-	channel := &api.Channel{}
+	channel := &kopsapi.Channel{}
 
-	expectErrorFromPopulateInstanceGroup(t, cluster, g, channel, "Name")
+	expectErrorFromPopulateInstanceGroup(t, cluster, g, channel, "objectMeta.name")
 }
 
 func TestPopulateInstanceGroup_Role_Required(t *testing.T) {
@@ -57,12 +57,12 @@ func TestPopulateInstanceGroup_Role_Required(t *testing.T) {
 	g := buildMinimalNodeInstanceGroup()
 	g.Spec.Role = ""
 
-	channel := &api.Channel{}
+	channel := &kopsapi.Channel{}
 
-	expectErrorFromPopulateInstanceGroup(t, cluster, g, channel, "Role")
+	expectErrorFromPopulateInstanceGroup(t, cluster, g, channel, "spec.role")
 }
 
-func expectErrorFromPopulateInstanceGroup(t *testing.T, cluster *api.Cluster, g *api.InstanceGroup, channel *api.Channel, message string) {
+func expectErrorFromPopulateInstanceGroup(t *testing.T, cluster *kopsapi.Cluster, g *kopsapi.InstanceGroup, channel *kopsapi.Channel, message string) {
 	_, err := PopulateInstanceGroupSpec(cluster, g, channel)
 	if err == nil {
 		t.Fatalf("Expected error from PopulateInstanceGroup")

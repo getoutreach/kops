@@ -10,11 +10,12 @@ Rolling update a cluster.
 This command updates a kubernetes cluster to match the cloud and kops specifications.
 
 To perform a rolling update, you need to update the cloud resources first with the command
-`kops update cluster`.
+`kops update cluster`. Nodes may be additionally marked for update by placing a
+`kops.k8s.io/needs-update` annotation on them.
 
 If rolling-update does not report that the cluster needs to be rolled, you can force the cluster to be
 rolled with the force flag.  Rolling update drains and validates the cluster by default.  A cluster is
-deemed validated when all required nodes are running and all pods in the kube-system namespace are operational.
+deemed validated when all required nodes are running and all pods with a critical priority are operational.
 When a node is deleted, rolling-update sleeps the interval for the node type, and then tries for the same period
 of time for the cluster to be validated.  For instance, setting --master-interval=3m causes rolling-update
 to wait for 3 minutes after a master is rolled, and another 3 minutes for the cluster to stabilize and pass
@@ -69,6 +70,7 @@ Note: terraform users will need to run all of the following commands from the sa
 ### Options inherited from parent commands
 
 ```
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --config string                    yaml config file (default is $HOME/.kops.yaml)
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -78,7 +80,7 @@ Note: terraform users will need to run all of the following commands from the sa
       --logtostderr                      log to standard error instead of files (default true)
       --name string                      Name of cluster. Overrides KOPS_CLUSTER_NAME environment variable
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --state string                     Location of state storage (kops 'config' file). Overrides KOPS_STATE_STORE environment variable
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
   -v, --v Level                          number for the log level verbosity

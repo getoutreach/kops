@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,7 +25,6 @@ import (
 	"k8s.io/klog"
 	"k8s.io/kops"
 	"k8s.io/kops/nodeup/pkg/bootstrap"
-	"k8s.io/kops/upup/models"
 	"k8s.io/kops/upup/pkg/fi/nodeup"
 )
 
@@ -37,27 +36,21 @@ const (
 func main() {
 	klog.InitFlags(nil)
 
-	gitVersion := ""
+	var flagConf, flagCacheDir, flagRootFS, gitVersion string
+	var flagRetries int
+	var dryrun, installSystemdUnit bool
+	target := "direct"
+
 	if kops.GitVersion != "" {
-		gitVersion = " (git-" + kops.GitVersion + ")"
+		gitVersion = fmt.Sprintf(" (git-%s)", kops.GitVersion)
 	}
 	fmt.Printf("nodeup version %s%s\n", kops.Version, gitVersion)
-
-	var flagConf string
 	flag.StringVar(&flagConf, "conf", "node.yaml", "configuration location")
-	var flagCacheDir string
 	flag.StringVar(&flagCacheDir, "cache", "/var/cache/nodeup", "the location for the local asset cache")
-	var flagRootFS string
 	flag.StringVar(&flagRootFS, "rootfs", "/", "the location of the machine root (for running in a container)")
-	var flagRetries int
 	flag.IntVar(&flagRetries, "retries", -1, "maximum number of retries on failure: -1 means retry forever")
-
-	dryrun := false
 	flag.BoolVar(&dryrun, "dryrun", false, "Don't create cloud resources; just show what would be done")
-	target := "direct"
 	flag.StringVar(&target, "target", target, "Target - direct, cloudinit")
-
-	installSystemdUnit := false
 	flag.BoolVar(&installSystemdUnit, "install-systemd-unit", installSystemdUnit, "If true, will install a systemd unit instead of running directly")
 
 	if dryrun {
@@ -123,7 +116,6 @@ func main() {
 				Target:         target,
 				CacheDir:       flagCacheDir,
 				FSRoot:         flagRootFS,
-				ModelDir:       models.NewAssetPath("nodeup"),
 			}
 			err = cmd.Run(os.Stdout)
 			if err == nil {

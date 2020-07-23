@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,8 +25,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/kops/cmd/kops/util"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -57,6 +58,8 @@ func NewCmdCreateSecretPublicKey(f *util.Factory, out io.Writer) *cobra.Command 
 		Long:    createSecretSSHPublicKeyLong,
 		Example: createSecretSSHPublicKeyExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			if len(args) == 0 {
 				exitWithError(fmt.Errorf("syntax: NAME -i <PublicKeyPath>"))
 			}
@@ -72,7 +75,7 @@ func NewCmdCreateSecretPublicKey(f *util.Factory, out io.Writer) *cobra.Command 
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err = RunCreateSecretPublicKey(f, os.Stdout, options)
+			err = RunCreateSecretPublicKey(ctx, f, os.Stdout, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -84,7 +87,7 @@ func NewCmdCreateSecretPublicKey(f *util.Factory, out io.Writer) *cobra.Command 
 	return cmd
 }
 
-func RunCreateSecretPublicKey(f *util.Factory, out io.Writer, options *CreateSecretPublickeyOptions) error {
+func RunCreateSecretPublicKey(ctx context.Context, f *util.Factory, out io.Writer, options *CreateSecretPublickeyOptions) error {
 	if options.PublicKeyPath == "" {
 		return fmt.Errorf("public key path is required (use -i)")
 	}
@@ -93,7 +96,7 @@ func RunCreateSecretPublicKey(f *util.Factory, out io.Writer, options *CreateSec
 		return fmt.Errorf("Name is required")
 	}
 
-	cluster, err := GetCluster(f, options.ClusterName)
+	cluster, err := GetCluster(ctx, f, options.ClusterName)
 	if err != nil {
 		return err
 	}

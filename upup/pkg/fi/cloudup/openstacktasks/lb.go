@@ -119,6 +119,11 @@ func NewLBTaskFromCloud(cloud openstack.OpenstackCloud, lifecycle *fi.Lifecycle,
 		return nil, err
 	}
 
+	secGroup := true
+	if find != nil && find.SecurityGroup == nil {
+		secGroup = false
+	}
+
 	actual := &LB{
 		ID:        fi.String(lb.ID),
 		Name:      fi.String(lb.Name),
@@ -128,6 +133,13 @@ func NewLBTaskFromCloud(cloud openstack.OpenstackCloud, lifecycle *fi.Lifecycle,
 		VipSubnet: fi.String(lb.VipSubnetID),
 	}
 
+	if secGroup {
+		sg, err := getSecurityGroupByName(&SecurityGroup{Name: fi.String(lb.Name)}, osCloud)
+		if err != nil {
+			return nil, err
+		}
+		actual.SecurityGroup = sg
+	}
 	if find != nil {
 		find.ID = actual.ID
 		find.PortID = actual.PortID
@@ -208,12 +220,14 @@ func (_ *LB) RenderOpenstack(t *openstack.OpenstackAPITarget, a, e, changes *LB)
 		e.PortID = fi.String(lb.VipPortID)
 		e.VipSubnet = fi.String(lb.VipSubnetID)
 
-		opts := ports.UpdateOpts{
-			SecurityGroups: &[]string{fi.StringValue(e.SecurityGroup.ID)},
-		}
-		_, err = ports.Update(t.Cloud.NetworkingClient(), lb.VipPortID, opts).Extract()
-		if err != nil {
-			return fmt.Errorf("Failed to update security group for port %s: %v", lb.VipPortID, err)
+		if e.SecurityGroup != nil {
+			opts := ports.UpdateOpts{
+				SecurityGroups: &[]string{fi.StringValue(e.SecurityGroup.ID)},
+			}
+			_, err = ports.Update(t.Cloud.NetworkingClient(), lb.VipPortID, opts).Extract()
+			if err != nil {
+				return fmt.Errorf("Failed to update security group for port %s: %v", lb.VipPortID, err)
+			}
 		}
 		return nil
 	}

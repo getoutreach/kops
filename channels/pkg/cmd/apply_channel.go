@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"strings"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	"github.com/spf13/cobra"
 	"k8s.io/kops/channels/pkg/channels"
 	"k8s.io/kops/util/pkg/tables"
@@ -41,7 +42,8 @@ func NewCmdApplyChannel(f Factory, out io.Writer) *cobra.Command {
 		Use:   "channel",
 		Short: "Apply channel",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return RunApplyChannel(f, out, &options, args)
+			ctx := context.TODO()
+			return RunApplyChannel(ctx, f, out, &options, args)
 		},
 	}
 
@@ -51,7 +53,7 @@ func NewCmdApplyChannel(f Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func RunApplyChannel(f Factory, out io.Writer, options *ApplyChannelOptions, args []string) error {
+func RunApplyChannel(ctx context.Context, f Factory, out io.Writer, options *ApplyChannelOptions, args []string) error {
 	k8sClient, err := f.KubernetesClient()
 	if err != nil {
 		return err
@@ -61,11 +63,6 @@ func RunApplyChannel(f Factory, out io.Writer, options *ApplyChannelOptions, arg
 	if err != nil {
 		return fmt.Errorf("error querying kubernetes version: %v", err)
 	}
-
-	//kubernetesVersion, err := semver.Parse(kubernetesVersionInfo.Major + "." + kubernetesVersionInfo.Minor + ".0")
-	//if err != nil {
-	//	return fmt.Errorf("cannot parse kubernetes version %q", kubernetesVersionInfo.Major+"."+kubernetesVersionInfo.Minor + ".0")
-	//}
 
 	kubernetesVersion, err := semver.ParseTolerant(kubernetesVersionInfo.GitVersion)
 	if err != nil {
@@ -138,7 +135,7 @@ func RunApplyChannel(f Factory, out io.Writer, options *ApplyChannelOptions, arg
 	var needUpdates []*channels.Addon
 	for _, addon := range menu.Addons {
 		// TODO: Cache lookups to prevent repeated lookups?
-		update, err := addon.GetRequiredUpdates(k8sClient)
+		update, err := addon.GetRequiredUpdates(ctx, k8sClient)
 		if err != nil {
 			return fmt.Errorf("error checking for required update: %v", err)
 		}
@@ -190,7 +187,7 @@ func RunApplyChannel(f Factory, out io.Writer, options *ApplyChannelOptions, arg
 	}
 
 	for _, needUpdate := range needUpdates {
-		update, err := needUpdate.EnsureUpdated(k8sClient)
+		update, err := needUpdate.EnsureUpdated(ctx, k8sClient)
 		if err != nil {
 			return fmt.Errorf("error updating %q: %v", needUpdate.Name, err)
 		}

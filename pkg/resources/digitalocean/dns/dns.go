@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package dns
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,11 +25,8 @@ import (
 	"strings"
 
 	"github.com/digitalocean/godo"
-	"github.com/digitalocean/godo/context"
-
-	"k8s.io/klog"
-
 	"golang.org/x/oauth2"
+	"k8s.io/klog"
 
 	"k8s.io/kops/dns-controller/pkg/dns"
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider"
@@ -41,7 +39,7 @@ const (
 )
 
 func init() {
-	dnsprovider.RegisterDnsProvider(providerName, func(config io.Reader) (dnsprovider.Interface, error) {
+	dnsprovider.RegisterDNSProvider(providerName, func(config io.Reader) (dnsprovider.Interface, error) {
 		client, err := newClient()
 		if err != nil {
 			return nil, err
@@ -56,7 +54,7 @@ type TokenSource struct {
 	AccessToken string
 }
 
-// Token() returns oauth2.Token
+// Token returns oauth2.Token
 func (t *TokenSource) Token() (*oauth2.Token, error) {
 	token := &oauth2.Token{
 		AccessToken: t.AccessToken,
@@ -74,7 +72,7 @@ func newClient() (*godo.Client, error) {
 		AccessToken: accessToken,
 	}
 
-	oauthClient := oauth2.NewClient(oauth2.NoContext, tokenSource)
+	oauthClient := oauth2.NewClient(context.TODO(), tokenSource)
 	return godo.NewClient(oauthClient), nil
 }
 
@@ -315,12 +313,14 @@ func (r *resourceRecordChangeset) Upsert(rrset dnsprovider.ResourceRecordSet) dn
 
 // Apply adds new records stored in r.additions, updates records stored
 // in r.upserts and deletes records stored in r.removals
-func (r *resourceRecordChangeset) Apply() error {
-	klog.V(2).Info("applying changes in record change set")
+func (r *resourceRecordChangeset) Apply(ctx context.Context) error {
+	// Empty changesets should be a relatively quick no-op
 	if r.IsEmpty() {
-		klog.V(2).Info("record change set is empty")
+		klog.V(4).Info("record change set is empty")
 		return nil
 	}
+
+	klog.V(2).Info("applying changes in record change set")
 
 	if len(r.additions) > 0 {
 		for _, rrset := range r.additions {
@@ -501,16 +501,6 @@ func createRecord(c *godo.Client, zoneName string, createRequest *godo.DomainRec
 	_, _, err := c.Domains.CreateRecord(context.TODO(), zoneName, createRequest)
 	if err != nil {
 		return fmt.Errorf("error creating record: %v", err)
-	}
-
-	return nil
-}
-
-// editRecord edits a record given an associated zone and a godo.DomainRecordEditRequest
-func editRecord(c *godo.Client, zoneName string, recordID int, editRequest *godo.DomainRecordEditRequest) error {
-	_, _, err := c.Domains.EditRecord(context.TODO(), zoneName, recordID, editRequest)
-	if err != nil {
-		return fmt.Errorf("error editing record: %v", err)
 	}
 
 	return nil

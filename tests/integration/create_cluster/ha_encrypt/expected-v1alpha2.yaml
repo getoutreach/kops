@@ -1,7 +1,7 @@
 apiVersion: kops.k8s.io/v1alpha2
 kind: Cluster
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   name: ha.example.com
 spec:
   api:
@@ -11,6 +11,7 @@ spec:
   channel: stable
   cloudProvider: aws
   configBase: memfs://tests/ha.example.com
+  containerRuntime: docker
   etcdClusters:
   - cpuRequest: 200m
     etcdMembers:
@@ -41,9 +42,11 @@ spec:
   iam:
     allowContainerRegistry: true
     legacy: false
+  kubelet:
+    anonymousAuth: false
   kubernetesApiAccess:
   - 0.0.0.0/0
-  kubernetesVersion: v1.6.0-alpha.3
+  kubernetesVersion: v1.15.0-alpha.3
   masterPublicName: api.ha.example.com
   networkCIDR: 172.20.0.0/16
   networking:
@@ -75,12 +78,12 @@ spec:
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: ha.example.com
   name: master-us-test-1a
 spec:
-  image: kope.io/k8s-1.5-debian-jessie-amd64-hvm-ebs-2018-08-17
+  image: kope.io/k8s-1.14-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: m3.medium
   maxSize: 1
   minSize: 1
@@ -95,12 +98,12 @@ spec:
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: ha.example.com
   name: master-us-test-1b
 spec:
-  image: kope.io/k8s-1.5-debian-jessie-amd64-hvm-ebs-2018-08-17
+  image: kope.io/k8s-1.14-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: m3.medium
   maxSize: 1
   minSize: 1
@@ -115,12 +118,12 @@ spec:
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: ha.example.com
   name: master-us-test-1c
 spec:
-  image: kope.io/k8s-1.5-debian-jessie-amd64-hvm-ebs-2018-08-17
+  image: kope.io/k8s-1.14-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: m3.medium
   maxSize: 1
   minSize: 1
@@ -135,19 +138,57 @@ spec:
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-01-01T00:00:00Z
+  creationTimestamp: "2017-01-01T00:00:00Z"
   labels:
     kops.k8s.io/cluster: ha.example.com
-  name: nodes
+  name: nodes-us-test-1a
 spec:
-  image: kope.io/k8s-1.5-debian-jessie-amd64-hvm-ebs-2018-08-17
+  image: kope.io/k8s-1.14-debian-stretch-amd64-hvm-ebs-2020-01-17
   machineType: t2.medium
-  maxSize: 2
-  minSize: 2
+  maxSize: 1
+  minSize: 1
   nodeLabels:
-    kops.k8s.io/instancegroup: nodes
+    kops.k8s.io/instancegroup: nodes-us-test-1a
   role: Node
   subnets:
   - us-test-1a
+
+---
+
+apiVersion: kops.k8s.io/v1alpha2
+kind: InstanceGroup
+metadata:
+  creationTimestamp: "2017-01-01T00:00:00Z"
+  labels:
+    kops.k8s.io/cluster: ha.example.com
+  name: nodes-us-test-1b
+spec:
+  image: kope.io/k8s-1.14-debian-stretch-amd64-hvm-ebs-2020-01-17
+  machineType: t2.medium
+  maxSize: 1
+  minSize: 1
+  nodeLabels:
+    kops.k8s.io/instancegroup: nodes-us-test-1b
+  role: Node
+  subnets:
   - us-test-1b
+
+---
+
+apiVersion: kops.k8s.io/v1alpha2
+kind: InstanceGroup
+metadata:
+  creationTimestamp: "2017-01-01T00:00:00Z"
+  labels:
+    kops.k8s.io/cluster: ha.example.com
+  name: nodes-us-test-1c
+spec:
+  image: kope.io/k8s-1.14-debian-stretch-amd64-hvm-ebs-2020-01-17
+  machineType: t2.medium
+  maxSize: 1
+  minSize: 1
+  nodeLabels:
+    kops.k8s.io/instancegroup: nodes-us-test-1c
+  role: Node
+  subnets:
   - us-test-1c

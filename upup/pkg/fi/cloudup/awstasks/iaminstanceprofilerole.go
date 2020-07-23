@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -112,8 +112,8 @@ func (_ *IAMInstanceProfileRole) RenderAWS(t *awsup.AWSAPITarget, a, e, changes 
 }
 
 type terraformIAMInstanceProfile struct {
-	Name *string            `json:"name"`
-	Role *terraform.Literal `json:"role"`
+	Name *string            `json:"name" cty:"name"`
+	Role *terraform.Literal `json:"role" cty:"role"`
 }
 
 func (_ *IAMInstanceProfileRole) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *IAMInstanceProfileRole) error {

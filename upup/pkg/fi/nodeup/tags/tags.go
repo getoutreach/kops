@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,7 +20,16 @@ const (
 	TagOSFamilyRHEL   = "_rhel_family"
 	TagOSFamilyDebian = "_debian_family"
 
+	TagOSCentOS8 = "_centos8"
+	TagOSRHEL8   = "_rhel8"
+
 	TagSystemd = "_systemd"
+
+	// Nodes with the "_automatic_upgrade" tag automatically update installed packages
+	// during bootstrapping and daily for security updates (unless this update would require
+	// a node reboot). To disable automatic node package updates, set:
+	// `Cluster.Spec.UpdatePolicy = external`
+	TagUpdatePolicyAuto = "_automatic_upgrades"
 )
 
 type HasTags interface {

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ func isNodeRegistered(ctx context.Context, client kubernetes.Interface, nodename
 	// @lets try multiple times
 	err := utils.Retry(ctx, maxInterval, maxTime, func() error {
 		// @step: get a lit of nodes
-		nodes, err := client.CoreV1().Nodes().List(metav1.ListOptions{
+		nodes, err := client.CoreV1().Nodes().List(ctx, metav1.ListOptions{
 			LabelSelector: fmt.Sprintf("kubernetes.io/hostname=%s", nodename),
 		})
 		if err != nil {

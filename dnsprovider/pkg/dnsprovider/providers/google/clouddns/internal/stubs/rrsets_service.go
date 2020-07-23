@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ func (s ResourceRecordSetsService) managedZone(project, managedZone string) (*Ma
 	}
 	z := s.Service.ManagedZones_.Impl[project][managedZone]
 	if z == nil {
-		return nil, fmt.Errorf("Zone %s not found in project %s", managedZone, project)
+		return nil, fmt.Errorf("zone %s not found in project %s", managedZone, project)
 	}
 	return z.(*ManagedZone), nil
 }

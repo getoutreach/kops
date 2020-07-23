@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,12 +25,10 @@ import (
 	"strings"
 	"syscall"
 
+	"k8s.io/klog"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/cloudinit"
 	"k8s.io/kops/upup/pkg/fi/nodeup/local"
-	"k8s.io/kops/upup/pkg/fi/utils"
-
-	"k8s.io/klog"
 )
 
 const (
@@ -38,7 +36,7 @@ const (
 	FileType_Symlink = "symlink"
 	// FileType_Directory defines a directory
 	FileType_Directory = "directory"
-	// FileType_File is a regualar file
+	// FileType_File is a regular file
 	FileType_File = "file"
 )
 
@@ -59,54 +57,24 @@ var _ fi.Task = &File{}
 var _ fi.HasDependencies = &File{}
 var _ fi.HasName = &File{}
 
-func NewFileTask(name string, src fi.Resource, destPath string, meta string) (*File, error) {
-	f := &File{
-		//Name:     name,
-		Contents: src,
-		Path:     destPath,
-	}
-
-	if meta != "" {
-		err := utils.YamlUnmarshal([]byte(meta), f)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing meta for file %q: %v", name, err)
-		}
-	}
-
-	if f.Symlink != nil && f.Type == "" {
-		f.Type = FileType_Symlink
-	}
-
-	return f, nil
-}
-
-var _ fi.HasDependencies = &File{}
-
 // GetDependencies implements HasDependencies::GetDependencies
 func (e *File) GetDependencies(tasks map[string]fi.Task) []fi.Task {
 	var deps []fi.Task
 	if e.Owner != nil {
-		ownerTask := tasks["user/"+*e.Owner]
+		ownerTask := tasks["UserTask/"+*e.Owner]
 		if ownerTask == nil {
 			// The user might be a pre-existing user (e.g. admin)
-			klog.Warningf("Unable to find task %q", "user/"+*e.Owner)
+			klog.Warningf("Unable to find task %q", "UserTask/"+*e.Owner)
 		} else {
 			deps = append(deps, ownerTask)
 		}
 	}
 
-	// Depend on disk mounts
-	// For simplicity, we just depend on _all_ disk mounts
-	// We could check the mountpath, but that feels excessive...
-	for _, v := range tasks {
-		if _, ok := v.(*MountDiskTask); ok {
-			deps = append(deps, v)
-		}
-	}
-
 	// Requires parent directories to be created
-	for _, v := range findCreatesDirParents(e.Path, tasks) {
-		deps = append(deps, v)
+	deps = append(deps, findCreatesDirParents(e.Path, tasks)...)
+
+	if hasDep, ok := e.Contents.(fi.HasDependencies); ok {
+		deps = append(deps, hasDep.GetDependencies(tasks)...)
 	}
 
 	// Requires other files to be created first
@@ -127,10 +95,6 @@ var _ fi.HasName = &File{}
 
 func (f *File) GetName() *string {
 	return &f.Path
-}
-
-func (f *File) SetName(name string) {
-	klog.Fatalf("SetName not supported for File task")
 }
 
 func (f *File) String() string {
@@ -160,7 +124,7 @@ func findFile(p string) (*File, error) {
 	actual.Mode = fi.String(fi.FileModeToString(stat.Mode() & os.ModePerm))
 
 	uid := int(stat.Sys().(*syscall.Stat_t).Uid)
-	owner, err := fi.LookupUserById(uid)
+	owner, err := fi.LookupUserByID(uid)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +135,7 @@ func findFile(p string) (*File, error) {
 	}
 
 	gid := int(stat.Sys().(*syscall.Stat_t).Gid)
-	group, err := fi.LookupGroupById(gid)
+	group, err := fi.LookupGroupByID(gid)
 	if err != nil {
 		return nil, err
 	}

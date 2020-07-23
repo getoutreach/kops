@@ -7,11 +7,11 @@ Set cluster fields.
 
 ### Synopsis
 
-Set a cluster field value. 
+Set a cluster field value.
 
-This command changes the desired cluster configuration in the registry. 
+ This command changes the desired cluster configuration in the registry.
 
-kops set does not update the cloud resources, to apply the changes use "kops update cluster".
+ kops set does not update the cloud resources; to apply the changes use "kops update cluster".
 
 ```
 kops set cluster [flags]
@@ -20,8 +20,8 @@ kops set cluster [flags]
 ### Examples
 
 ```
-  # Set cluster to run kubernetes version 1.10.0
-  kops set cluster k8s.cluster.site spec.kubernetesVersion=1.10.0
+  # Set cluster to run kubernetes version 1.17.0
+  kops set cluster k8s.cluster.site spec.kubernetesVersion=1.17.0
 ```
 
 ### Options
@@ -33,6 +33,7 @@ kops set cluster [flags]
 ### Options inherited from parent commands
 
 ```
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --config string                    yaml config file (default is $HOME/.kops.yaml)
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -42,7 +43,7 @@ kops set cluster [flags]
       --logtostderr                      log to standard error instead of files (default true)
       --name string                      Name of cluster. Overrides KOPS_CLUSTER_NAME environment variable
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --state string                     Location of state storage (kops 'config' file). Overrides KOPS_STATE_STORE environment variable
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
   -v, --v Level                          number for the log level verbosity

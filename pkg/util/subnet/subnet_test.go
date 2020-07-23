@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +21,44 @@ import (
 	"reflect"
 	"testing"
 )
+
+func Test_Overlap(t *testing.T) {
+	grid := []struct {
+		L       string
+		R       string
+		Overlap bool
+	}{
+		{
+			L:       "192.168.0.1/16",
+			R:       "192.168.1.0/24",
+			Overlap: true,
+		},
+		{
+			L:       "192.168.1.0/24",
+			R:       "192.168.0.1/32",
+			Overlap: false,
+		},
+		{
+			L:       "0.0.0.0/0",
+			R:       "192.168.1.1/32",
+			Overlap: true,
+		},
+	}
+	for _, g := range grid {
+		_, l, err := net.ParseCIDR(g.L)
+		if err != nil {
+			t.Fatalf("error parsing %q: %v", g.L, err)
+		}
+		_, r, err := net.ParseCIDR(g.R)
+		if err != nil {
+			t.Fatalf("error parsing %q: %v", g.R, err)
+		}
+		actual := Overlap(l, r)
+		if actual != g.Overlap {
+			t.Errorf("Overlap(%q, %q) = %v, expected %v", g.L, g.R, actual, g.Overlap)
+		}
+	}
+}
 
 func Test_BelongsTo(t *testing.T) {
 	grid := []struct {

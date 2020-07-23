@@ -43,24 +43,6 @@ func (c *openstackCloud) GetFloatingIP(id string) (fip *floatingips.FloatingIP, 
 	return fip, nil
 }
 
-func (c *openstackCloud) CreateFloatingIP(opts floatingips.CreateOpts) (fip *floatingips.FloatingIP, err error) {
-	done, err := vfs.RetryWithBackoff(writeBackoff, func() (bool, error) {
-
-		fip, err = floatingips.Create(c.ComputeClient(), opts).Extract()
-		if err != nil {
-			return false, fmt.Errorf("CreateFloatingIP: create floating IP failed: %v", err)
-		}
-		return true, nil
-	})
-	if !done {
-		if err == nil {
-			err = wait.ErrWaitTimeout
-		}
-		return fip, err
-	}
-	return fip, nil
-}
-
 func (c *openstackCloud) AssociateFloatingIPToInstance(serverID string, opts floatingips.AssociateOpts) (err error) {
 	done, err := vfs.RetryWithBackoff(writeBackoff, func() (bool, error) {
 		err = floatingips.AssociateInstance(c.ComputeClient(), serverID, opts).ExtractErr()
@@ -99,11 +81,11 @@ func (c *openstackCloud) ListFloatingIPs() (fips []floatingips.FloatingIP, err e
 	done, err := vfs.RetryWithBackoff(readBackoff, func() (bool, error) {
 		pages, err := floatingips.List(c.ComputeClient()).AllPages()
 		if err != nil {
-			return false, fmt.Errorf("Failed to list floating ip: %v", err)
+			return false, fmt.Errorf("failed to list floating ip: %v", err)
 		}
 		fips, err = floatingips.ExtractFloatingIPs(pages)
 		if err != nil {
-			return false, fmt.Errorf("Failed to extract floating ip: %v", err)
+			return false, fmt.Errorf("failed to extract floating ip: %v", err)
 		}
 		return true, nil
 	})
@@ -121,11 +103,11 @@ func (c *openstackCloud) ListL3FloatingIPs(opts l3floatingip.ListOpts) (fips []l
 	done, err := vfs.RetryWithBackoff(readBackoff, func() (bool, error) {
 		page, err := l3floatingip.List(c.NetworkingClient(), opts).AllPages()
 		if err != nil {
-			return false, fmt.Errorf("Failed to list L3 floating ip: %v", err)
+			return false, fmt.Errorf("failed to list L3 floating ip: %v", err)
 		}
 		fips, err = l3floatingip.ExtractFloatingIPs(page)
 		if err != nil {
-			return false, fmt.Errorf("Failed to extract L3 floating ip: %v", err)
+			return false, fmt.Errorf("failed to extract L3 floating ip: %v", err)
 		}
 		return true, nil
 	})
@@ -142,8 +124,8 @@ func (c *openstackCloud) DeleteFloatingIP(id string) (err error) {
 
 	done, err := vfs.RetryWithBackoff(writeBackoff, func() (bool, error) {
 		err = l3floatingip.Delete(c.ComputeClient(), id).ExtractErr()
-		if err != nil {
-			return false, fmt.Errorf("Failed to delete floating ip %s: %v", id, err)
+		if err != nil && !isNotFound(err) {
+			return false, fmt.Errorf("failed to delete floating ip %s: %v", id, err)
 		}
 		return true, nil
 	})
@@ -157,8 +139,8 @@ func (c *openstackCloud) DeleteL3FloatingIP(id string) (err error) {
 
 	done, err := vfs.RetryWithBackoff(writeBackoff, func() (bool, error) {
 		err = l3floatingip.Delete(c.NetworkingClient(), id).ExtractErr()
-		if err != nil {
-			return false, fmt.Errorf("Failed to delete L3 floating ip %s: %v", id, err)
+		if err != nil && !isNotFound(err) {
+			return false, fmt.Errorf("failed to delete L3 floating ip %s: %v", id, err)
 		}
 		return true, nil
 	})

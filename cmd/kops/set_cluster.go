@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 
 	"k8s.io/kops/cmd/kops/util"
 	"k8s.io/kops/pkg/commands"
@@ -34,11 +35,11 @@ var (
 
         This command changes the desired cluster configuration in the registry.
 
-        kops set does not update the cloud resources, to apply the changes use "kops update cluster".`))
+        kops set does not update the cloud resources; to apply the changes use "kops update cluster".`))
 
 	setClusterExample = templates.Examples(i18n.T(`
-		# Set cluster to run kubernetes version 1.10.0
-		kops set cluster k8s.cluster.site spec.kubernetesVersion=1.10.0
+		# Set cluster to run kubernetes version 1.17.0
+		kops set cluster k8s.cluster.site spec.kubernetesVersion=1.17.0
 	`))
 )
 
@@ -52,6 +53,8 @@ func NewCmdSetCluster(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    setClusterLong,
 		Example: setClusterExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			for i, arg := range args {
 				index := strings.Index(arg, "=")
 
@@ -70,7 +73,7 @@ func NewCmdSetCluster(f *util.Factory, out io.Writer) *cobra.Command {
 				options.ClusterName = rootCommand.ClusterName()
 			}
 
-			if err := commands.RunSetCluster(f, cmd, out, options); err != nil {
+			if err := commands.RunSetCluster(ctx, f, cmd, out, options); err != nil {
 				exitWithError(err)
 			}
 		},

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -77,6 +77,11 @@ func Test_VFSPath(t *testing.T) {
 		{
 			Input:          "http://s3.amazonaws.com/bucket",
 			ExpectedResult: "s3://bucket",
+			ExpectError:    false,
+		},
+		{
+			Input:          "https://bucket-name.s3.us-east-1.amazonaws.com/path",
+			ExpectedResult: "s3://bucket-name/path",
 			ExpectError:    false,
 		},
 		{

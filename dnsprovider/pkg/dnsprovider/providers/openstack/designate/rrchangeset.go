@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package designate
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gophercloud/gophercloud/openstack/dns/v2/recordsets"
@@ -50,17 +51,22 @@ func (c *ResourceRecordChangeset) Upsert(rrset dnsprovider.ResourceRecordSet) dn
 	return c
 }
 
-func (c *ResourceRecordChangeset) Apply() error {
+func (c *ResourceRecordChangeset) Apply(ctx context.Context) error {
+	// Empty changesets should be a relatively quick no-op
+	if c.IsEmpty() {
+		return nil
+	}
+
 	zoneID := c.zone.impl.ID
 
 	for _, removal := range c.removals {
 		rrID, err := c.nameToID(removal.Name())
 		if err != nil {
-
+			return err
 		}
 		err = recordsets.Delete(c.zone.zones.iface.sc, zoneID, rrID).ExtractErr()
 		if err != nil {
-
+			return err
 		}
 	}
 
@@ -73,17 +79,18 @@ func (c *ResourceRecordChangeset) Apply() error {
 		}
 		_, err := recordsets.Create(c.zone.zones.iface.sc, zoneID, opts).Extract()
 		if err != nil {
-
+			return err
 		}
 	}
 
 	for _, upsert := range c.upserts {
 		rrID, err := c.nameToID(upsert.Name())
 		if err != nil {
-
+			return err
 		}
+		ttl := int(upsert.Ttl())
 		uopts := recordsets.UpdateOpts{
-			TTL:     int(upsert.Ttl()),
+			TTL:     &ttl,
 			Records: upsert.Rrdatas(),
 		}
 		_, err = recordsets.Update(c.zone.zones.iface.sc, zoneID, rrID, uopts).Extract()
@@ -96,7 +103,7 @@ func (c *ResourceRecordChangeset) Apply() error {
 			}
 			_, err := recordsets.Create(c.zone.zones.iface.sc, zoneID, copts).Extract()
 			if err != nil {
-
+				return err
 			}
 		}
 	}
@@ -119,11 +126,11 @@ func (c *ResourceRecordChangeset) nameToID(name string) (string, error) {
 	}
 	allPages, err := recordsets.ListByZone(c.zone.zones.iface.sc, c.zone.impl.ID, opts).AllPages()
 	if err != nil {
-
+		return "", err
 	}
 	rrs, err := recordsets.ExtractRecordSets(allPages)
 	if err != nil {
-
+		return "", err
 	}
 	switch len(rrs) {
 	case 0:

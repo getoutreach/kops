@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -141,7 +141,7 @@ func (s *Subnet) CheckChanges(a, e, changes *Subnet) error {
 	}
 
 	if a != nil {
-		// TODO: Do we want to destroy & recreate the subnet when theses immutable fields change?
+		// TODO: Do we want to destroy & recreate the subnet when these immutable fields change?
 		if changes.VPC != nil {
 			var aID *string
 			if a.VPC != nil {
@@ -181,9 +181,10 @@ func (_ *Subnet) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Subnet) error {
 		klog.V(2).Infof("Creating Subnet with CIDR: %q", *e.CIDR)
 
 		request := &ec2.CreateSubnetInput{
-			CidrBlock:        e.CIDR,
-			AvailabilityZone: e.AvailabilityZone,
-			VpcId:            e.VPC.ID,
+			CidrBlock:         e.CIDR,
+			AvailabilityZone:  e.AvailabilityZone,
+			VpcId:             e.VPC.ID,
+			TagSpecifications: awsup.EC2TagSpecification(ec2.ResourceTypeSubnet, e.Tags),
 		}
 
 		response, err := t.Cloud.EC2().CreateSubnet(request)
@@ -214,10 +215,10 @@ func subnetSlicesEqualIgnoreOrder(l, r []*Subnet) bool {
 }
 
 type terraformSubnet struct {
-	VPCID            *terraform.Literal `json:"vpc_id"`
-	CIDR             *string            `json:"cidr_block"`
-	AvailabilityZone *string            `json:"availability_zone"`
-	Tags             map[string]string  `json:"tags,omitempty"`
+	VPCID            *terraform.Literal `json:"vpc_id" cty:"vpc_id"`
+	CIDR             *string            `json:"cidr_block" cty:"cidr_block"`
+	AvailabilityZone *string            `json:"availability_zone" cty:"availability_zone"`
+	Tags             map[string]string  `json:"tags,omitempty" cty:"tags"`
 }
 
 func (_ *Subnet) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *Subnet) error {

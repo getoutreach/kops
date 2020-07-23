@@ -6,9 +6,11 @@ metadata:
   labels:
     k8s-addon: dns-controller.addons.k8s.io
     k8s-app: dns-controller
-    version: v1.14.0-alpha.1
+    version: v1.19.0-alpha.1
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       k8s-app: dns-controller
@@ -17,13 +19,13 @@ spec:
       labels:
         k8s-addon: dns-controller.addons.k8s.io
         k8s-app: dns-controller
-        version: v1.14.0-alpha.1
+        version: v1.19.0-alpha.1
       annotations:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
+      priorityClassName: system-cluster-critical
       tolerations:
-      - key: "node-role.kubernetes.io/master"
-        effect: NoSchedule
+      - operator: Exists
       nodeSelector:
         node-role.kubernetes.io/master: ""
       dnsPolicy: Default  # Don't use cluster DNS (we are likely running before kube-dns)
@@ -31,20 +33,21 @@ spec:
       serviceAccount: dns-controller
       containers:
       - name: dns-controller
-        image: kope/dns-controller:1.14.0-alpha.1
+        image: kope/dns-controller:1.19.0-alpha.1
         command:
 {{ range $arg := DnsControllerArgv }}
         - "{{ $arg }}"
 {{ end }}
-{{- if .EgressProxy }}
         env:
+        - name: KUBERNETES_SERVICE_HOST
+          value: "127.0.0.1"
+{{- if .EgressProxy }}
 {{ range $name, $value := ProxyEnv }}
         - name: {{ $name }}
           value: {{ $value }}
 {{ end }}
 {{- end }}
 {{- if eq .CloudProvider "digitalocean" }}
-        env:
         - name: DIGITALOCEAN_ACCESS_TOKEN
           valueFrom:
             secretKeyRef:
@@ -55,6 +58,8 @@ spec:
           requests:
             cpu: 50m
             memory: 50Mi
+        securityContext:
+          runAsNonRoot: true
 
 ---
 

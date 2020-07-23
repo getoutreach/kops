@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,12 +18,17 @@ package model
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
+	"k8s.io/kops/pkg/configbuilder"
 	"k8s.io/kops/pkg/flagbuilder"
 	"k8s.io/kops/pkg/k8scodecs"
 	"k8s.io/kops/pkg/kubemanifest"
+	"k8s.io/kops/pkg/rbac"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/nodetasks"
+	"k8s.io/kops/util/pkg/architectures"
 	"k8s.io/kops/util/pkg/exec"
 	"k8s.io/kops/util/pkg/proxy"
 
@@ -33,6 +38,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// ClientConnectionConfig is used by kube-scheduler to talk to the api server
+type ClientConnectionConfig struct {
+	Burst      int32    `yaml:"burst,omitempty"`
+	Kubeconfig string   `yaml:"kubeconfig"`
+	QPS        *float64 `yaml:"qps,omitempty"`
+}
+
+// SchedulerConfig is used to generate the config file
+type SchedulerConfig struct {
+	APIVersion       string                 `yaml:"apiVersion"`
+	Kind             string                 `yaml:"kind"`
+	ClientConnection ClientConnectionConfig `yaml:"clientConnection,omitempty"`
+}
+
 // KubeSchedulerBuilder install kube-scheduler
 type KubeSchedulerBuilder struct {
 	*NodeupModelContext
@@ -40,14 +59,16 @@ type KubeSchedulerBuilder struct {
 
 var _ fi.ModelBuilder = &KubeSchedulerBuilder{}
 
+const defaultKubeConfig = "/var/lib/kube-scheduler/kubeconfig"
+
 // Build is responsible for building the manifest for the kube-scheduler
 func (b *KubeSchedulerBuilder) Build(c *fi.ModelBuilderContext) error {
 	if !b.IsMaster {
 		return nil
 	}
-
+	useConfigFile := b.IsKubernetesGTE("1.12")
 	{
-		pod, err := b.buildPod()
+		pod, err := b.buildPod(useConfigFile)
 		if err != nil {
 			return fmt.Errorf("error building kube-scheduler pod: %v", err)
 		}
@@ -65,14 +86,33 @@ func (b *KubeSchedulerBuilder) Build(c *fi.ModelBuilderContext) error {
 	}
 
 	{
-		kubeconfig, err := b.BuildPKIKubeconfig("kube-scheduler")
+		kubeconfig := b.BuildIssuedKubeconfig("kube-scheduler", nodetasks.PKIXName{CommonName: rbac.KubeScheduler}, c)
+
+		c.AddTask(&nodetasks.File{
+			Path:     "/var/lib/kube-scheduler/kubeconfig",
+			Contents: kubeconfig,
+			Type:     nodetasks.FileType_File,
+			Mode:     s("0400"),
+		})
+	}
+	if useConfigFile {
+		var config *SchedulerConfig
+		if b.IsKubernetesGTE("1.19") {
+			config = NewSchedulerConfig("kubescheduler.config.k8s.io/v1beta1")
+		} else if b.IsKubernetesGTE("1.18") {
+			config = NewSchedulerConfig("kubescheduler.config.k8s.io/v1alpha2")
+		} else {
+			config = NewSchedulerConfig("kubescheduler.config.k8s.io/v1alpha1")
+		}
+
+		manifest, err := configbuilder.BuildConfigYaml(b.Cluster.Spec.KubeScheduler, config)
 		if err != nil {
 			return err
 		}
 
 		c.AddTask(&nodetasks.File{
-			Path:     "/var/lib/kube-scheduler/kubeconfig",
-			Contents: fi.NewStringResource(kubeconfig),
+			Path:     "/var/lib/kube-scheduler/config.yaml",
+			Contents: fi.NewBytesResource(manifest),
 			Type:     nodetasks.FileType_File,
 			Mode:     s("0400"),
 		})
@@ -91,19 +131,33 @@ func (b *KubeSchedulerBuilder) Build(c *fi.ModelBuilderContext) error {
 	return nil
 }
 
+// NewSchedulerConfig initializes a new kube-scheduler config file
+func NewSchedulerConfig(apiVersion string) *SchedulerConfig {
+	schedConfig := new(SchedulerConfig)
+	schedConfig.APIVersion = apiVersion
+	schedConfig.Kind = "KubeSchedulerConfiguration"
+	schedConfig.ClientConnection = ClientConnectionConfig{}
+	schedConfig.ClientConnection.Kubeconfig = defaultKubeConfig
+	return schedConfig
+}
+
 // buildPod is responsible for constructing the pod specification
-func (b *KubeSchedulerBuilder) buildPod() (*v1.Pod, error) {
+func (b *KubeSchedulerBuilder) buildPod(useConfigFile bool) (*v1.Pod, error) {
 	c := b.Cluster.Spec.KubeScheduler
 
 	flags, err := flagbuilder.BuildFlagsList(c)
 	if err != nil {
 		return nil, fmt.Errorf("error building kube-scheduler flags: %v", err)
 	}
-	// Add kubeconfig flag
-	flags = append(flags, "--kubeconfig="+"/var/lib/kube-scheduler/kubeconfig")
+	if useConfigFile {
+		flags = append(flags, "--config="+"/var/lib/kube-scheduler/config.yaml")
+	} else {
+		// Add kubeconfig flag
+		flags = append(flags, "--kubeconfig="+defaultKubeConfig)
+	}
 
 	if c.UsePolicyConfigMap != nil {
-		flags = append(flags, "--policy-configmap=scheduler-policy --policy-configmap-namespace=kube-system")
+		flags = append(flags, "--policy-configmap=scheduler-policy", "--policy-configmap-namespace=kube-system")
 	}
 
 	pod := &v1.Pod{
@@ -123,9 +177,14 @@ func (b *KubeSchedulerBuilder) buildPod() (*v1.Pod, error) {
 		},
 	}
 
+	image := c.Image
+	if b.Architecture != architectures.ArchitectureAmd64 {
+		image = strings.Replace(image, "-amd64", "-"+string(b.Architecture), 1)
+	}
+
 	container := &v1.Container{
 		Name:  "kube-scheduler",
-		Image: c.Image,
+		Image: image,
 		Env:   proxy.GetProxyEnvVars(b.Cluster.Spec.EgressProxy),
 		LivenessProbe: &v1.Probe{
 			Handler: v1.Handler{
@@ -162,6 +221,14 @@ func (b *KubeSchedulerBuilder) buildPod() (*v1.Pod, error) {
 			"/usr/local/bin/kube-scheduler",
 			sortedStrings(flags),
 			"/var/log/kube-scheduler.log")
+	}
+
+	if c.MaxPersistentVolumes != nil {
+		maxPDV := v1.EnvVar{
+			Name:  "KUBE_MAX_PD_VOLS", // https://kubernetes.io/docs/concepts/storage/storage-limits/
+			Value: strconv.Itoa(int(*c.MaxPersistentVolumes)),
+		}
+		container.Env = append(container.Env, maxPDV)
 	}
 
 	pod.Spec.Containers = append(pod.Spec.Containers, *container)

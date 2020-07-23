@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -163,6 +163,18 @@ func (k *PrivateKey) WriteTo(w io.Writer) (int64, error) {
 	}
 
 	return data.WriteTo(w)
+}
+
+func (k *PrivateKey) WriteToFile(filename string, perm os.FileMode) error {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	_, err = k.WriteTo(f)
+	if err1 := f.Close(); err == nil {
+		err = err1
+	}
+	return err
 }
 
 func parsePEMPrivateKey(pemData []byte) (crypto.PrivateKey, error) {

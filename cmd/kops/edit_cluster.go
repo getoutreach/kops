@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -36,9 +37,9 @@ import (
 	"k8s.io/kops/pkg/kopscodecs"
 	"k8s.io/kops/pkg/try"
 	"k8s.io/kops/upup/pkg/fi/cloudup"
-	util_editor "k8s.io/kubernetes/pkg/kubectl/cmd/util/editor"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	util_editor "k8s.io/kubectl/pkg/cmd/util/editor"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 type EditClusterOptions struct {
@@ -69,7 +70,9 @@ func NewCmdEditCluster(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    editClusterLong,
 		Example: editClusterExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			err := RunEditCluster(f, cmd, args, out, options)
+			ctx := context.TODO()
+
+			err := RunEditCluster(ctx, f, cmd, args, out, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -79,13 +82,13 @@ func NewCmdEditCluster(f *util.Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func RunEditCluster(f *util.Factory, cmd *cobra.Command, args []string, out io.Writer, options *EditClusterOptions) error {
+func RunEditCluster(ctx context.Context, f *util.Factory, cmd *cobra.Command, args []string, out io.Writer, options *EditClusterOptions) error {
 	err := rootCommand.ProcessArgs(args)
 	if err != nil {
 		return err
 	}
 
-	oldCluster, err := rootCommand.Cluster()
+	oldCluster, err := rootCommand.Cluster(ctx)
 	if err != nil {
 		return err
 	}
@@ -100,7 +103,7 @@ func RunEditCluster(f *util.Factory, cmd *cobra.Command, args []string, out io.W
 		return err
 	}
 
-	instanceGroups, err := commands.ReadAllInstanceGroups(clientset, oldCluster)
+	instanceGroups, err := commands.ReadAllInstanceGroups(ctx, clientset, oldCluster)
 	if err != nil {
 		return err
 	}
@@ -219,7 +222,12 @@ func RunEditCluster(f *util.Factory, cmd *cobra.Command, args []string, out io.W
 			continue
 		}
 
-		err = validation.DeepValidate(fullCluster, instanceGroups, true)
+		cloud, err := cloudup.BuildCloud(fullCluster)
+		if err != nil {
+			return err
+		}
+
+		err = validation.DeepValidate(fullCluster, instanceGroups, true, cloud)
 		if err != nil {
 			results = editResults{
 				file: file,
@@ -242,7 +250,7 @@ func RunEditCluster(f *util.Factory, cmd *cobra.Command, args []string, out io.W
 		}
 
 		// Note we perform as much validation as we can, before writing a bad config
-		_, err = clientset.UpdateCluster(newCluster, status)
+		_, err = clientset.UpdateCluster(ctx, newCluster, status)
 		if err != nil {
 			return preservedFile(err, file, out)
 		}

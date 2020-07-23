@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -31,12 +31,15 @@ func TestLaunchTemplateCloudformationRender(t *testing.T) {
 				IAMInstanceProfile: &IAMInstanceProfile{
 					Name: fi.String("nodes"),
 				},
-				ID:                     fi.String("test-11"),
-				InstanceMonitoring:     fi.Bool(true),
-				InstanceType:           fi.String("t2.medium"),
-				RootVolumeOptimization: fi.Bool(true),
-				RootVolumeIops:         fi.Int64(100),
-				RootVolumeSize:         fi.Int64(64),
+				ID:                           fi.String("test-11"),
+				InstanceMonitoring:           fi.Bool(true),
+				InstanceType:                 fi.String("t2.medium"),
+				RootVolumeOptimization:       fi.Bool(true),
+				RootVolumeIops:               fi.Int64(100),
+				RootVolumeSize:               fi.Int64(64),
+				SpotPrice:                    "10",
+				SpotDurationInMinutes:        fi.Int64(120),
+				InstanceInterruptionBehavior: fi.String("hibernate"),
 				SSHKey: &SSHKey{
 					Name: fi.String("mykey"),
 				},
@@ -61,23 +64,32 @@ func TestLaunchTemplateCloudformationRender(t *testing.T) {
           },
           "InstanceType": "t2.medium",
           "KeyName": "mykey",
+          "InstanceMarketOptions": {
+            "MarketType": "spot",
+            "SpotOptions": {
+              "BlockDurationMinutes": 120,
+              "InstanceInterruptionBehavior": "hibernate",
+              "MaxPrice": "10"
+            }
+          },
           "NetworkInterfaces": [
             {
               "AssociatePublicIpAddress": true,
-              "DeleteOnTermination": true
+              "DeleteOnTermination": true,
+              "DeviceIndex": 0,
+              "Groups": [
+                {
+                  "Ref": "AWSEC2SecurityGroupnodes1"
+                },
+                {
+                  "Ref": "AWSEC2SecurityGroupnodes2"
+                }
+              ]
             }
           ],
           "Placement": [
             {
               "Tenancy": "dedicated"
-            }
-          ],
-          "SecurityGroup": [
-            {
-              "Ref": "AWSEC2SecurityGroupnodes1"
-            },
-            {
-              "Ref": "AWSEC2SecurityGroupnodes2"
             }
           ]
         }
@@ -127,7 +139,7 @@ func TestLaunchTemplateCloudformationRender(t *testing.T) {
           "BlockDeviceMappings": [
             {
               "DeviceName": "/dev/xvdd",
-              "EBS": {
+              "Ebs": {
                 "VolumeType": "gp2",
                 "VolumeSize": 100,
                 "DeleteOnTermination": true,
@@ -146,20 +158,21 @@ func TestLaunchTemplateCloudformationRender(t *testing.T) {
           "NetworkInterfaces": [
             {
               "AssociatePublicIpAddress": true,
-              "DeleteOnTermination": true
+              "DeleteOnTermination": true,
+              "DeviceIndex": 0,
+              "Groups": [
+                {
+                  "Ref": "AWSEC2SecurityGroupnodes1"
+                },
+                {
+                  "Ref": "AWSEC2SecurityGroupnodes2"
+                }
+              ]
             }
           ],
           "Placement": [
             {
               "Tenancy": "dedicated"
-            }
-          ],
-          "SecurityGroup": [
-            {
-              "Ref": "AWSEC2SecurityGroupnodes1"
-            },
-            {
-              "Ref": "AWSEC2SecurityGroupnodes2"
             }
           ]
         }

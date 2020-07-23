@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -290,16 +290,16 @@ func (_ *SecurityGroupRule) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Secu
 }
 
 type terraformSecurityGroupIngress struct {
-	Type *string `json:"type"`
+	Type *string `json:"type" cty:"type"`
 
-	SecurityGroup *terraform.Literal `json:"security_group_id"`
-	SourceGroup   *terraform.Literal `json:"source_security_group_id,omitempty"`
+	SecurityGroup *terraform.Literal `json:"security_group_id" cty:"security_group_id"`
+	SourceGroup   *terraform.Literal `json:"source_security_group_id,omitempty" cty:"source_security_group_id"`
 
-	FromPort *int64 `json:"from_port,omitempty"`
-	ToPort   *int64 `json:"to_port,omitempty"`
+	FromPort *int64 `json:"from_port,omitempty" cty:"from_port"`
+	ToPort   *int64 `json:"to_port,omitempty" cty:"to_port"`
 
-	Protocol   *string  `json:"protocol,omitempty"`
-	CIDRBlocks []string `json:"cidr_blocks,omitempty"`
+	Protocol   *string  `json:"protocol,omitempty" cty:"protocol"`
+	CIDRBlocks []string `json:"cidr_blocks,omitempty" cty:"cidr_blocks"`
 }
 
 func (_ *SecurityGroupRule) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *SecurityGroupRule) error {

@@ -22,15 +22,16 @@ go_library(
         "//pkg/util/subnet:go_default_library",
         "//upup/pkg/fi:go_default_library",
         "//upup/pkg/fi/cloudup/awsup:go_default_library",
-        "//util/pkg/slice:go_default_library",
         "//vendor/github.com/aws/aws-sdk-go/aws/arn:go_default_library",
-        "//vendor/github.com/blang/semver:go_default_library",
+        "//vendor/github.com/blang/semver/v4:go_default_library",
+        "//vendor/golang.org/x/net/ipv4:go_default_library",
+        "//vendor/golang.org/x/net/ipv6:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/api/validation:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/intstr:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/net:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/sets:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/validation:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/validation/field:go_default_library",
-        "//vendor/k8s.io/klog:go_default_library",
     ],
 )
 
@@ -38,6 +39,7 @@ go_test(
     name = "go_default_test",
     srcs = [
         "aws_test.go",
+        "cluster_test.go",
         "instancegroup_test.go",
         "validation_test.go",
     ],
@@ -45,7 +47,9 @@ go_test(
     deps = [
         "//pkg/apis/kops:go_default_library",
         "//upup/pkg/fi:go_default_library",
+        "//upup/pkg/fi/cloudup/awsup:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/intstr:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/sets:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/validation:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/util/validation/field:go_default_library",

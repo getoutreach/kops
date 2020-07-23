@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -108,9 +108,7 @@ func (e *executor) RunTasks(taskMap map[string]Task) error {
 		progress := false
 
 		var tasks []*taskState
-		for _, ts := range canRun {
-			tasks = append(tasks, ts)
-		}
+		tasks = append(tasks, canRun...)
 
 		taskErrors := e.forkJoin(tasks)
 		var errors []error
@@ -126,7 +124,7 @@ func (e *executor) RunTasks(taskMap map[string]Task) error {
 					continue
 				}
 
-				remaining := time.Second * time.Duration(int(ts.deadline.Sub(time.Now()).Seconds()))
+				remaining := time.Second * time.Duration(int(time.Until(ts.deadline).Seconds()))
 				klog.Warningf("error running task %q (%v remaining to succeed): %v", ts.key, remaining, err)
 				errors = append(errors, err)
 				ts.lastError = err
@@ -160,8 +158,6 @@ func (e *executor) RunTasks(taskMap map[string]Task) error {
 
 	return nil
 }
-
-type runnable func() error
 
 func (e *executor) forkJoin(tasks []*taskState) []error {
 	if len(tasks) == 0 {

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,9 +20,8 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog"
 	"k8s.io/kops/pkg/apis/kops/util"
 	"k8s.io/kops/util/pkg/vfs"
@@ -32,12 +31,11 @@ var DefaultChannelBase = "https://raw.githubusercontent.com/kubernetes/kops/mast
 
 const (
 	DefaultChannel = "stable"
-	AlphaChannel   = "alpha"
 )
 
 type Channel struct {
-	v1.TypeMeta `json:",inline"`
-	ObjectMeta  metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta `json:",inline"`
+	ObjectMeta      metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	Spec ChannelSpec `json:"spec,omitempty"`
 }
@@ -86,6 +84,10 @@ type ChannelImageSpec struct {
 
 // LoadChannel loads a Channel object from the specified VFS location
 func LoadChannel(location string) (*Channel, error) {
+	if location == "none" {
+		return &Channel{}, nil
+	}
+
 	u, err := url.Parse(location)
 	if err != nil {
 		return nil, fmt.Errorf("invalid channel: %q", location)
@@ -140,9 +142,8 @@ func (v *KubernetesVersionSpec) FindRecommendedUpgrade(version semver.Version) (
 	if recommendedVersion.GT(version) {
 		klog.V(2).Infof("RecommendedVersion=%q, Have=%q.  Recommending upgrade", recommendedVersion, version)
 		return recommendedVersion, nil
-	} else {
-		klog.V(4).Infof("RecommendedVersion=%q, Have=%q.  No upgrade needed.", recommendedVersion, version)
 	}
+	klog.V(4).Infof("RecommendedVersion=%q, Have=%q.  No upgrade needed.", recommendedVersion, version)
 	return nil, nil
 }
 
@@ -160,9 +161,8 @@ func (v *KopsVersionSpec) FindRecommendedUpgrade(version semver.Version) (*semve
 	if recommendedVersion.GT(version) {
 		klog.V(2).Infof("RecommendedVersion=%q, Have=%q.  Recommending upgrade", recommendedVersion, version)
 		return &recommendedVersion, nil
-	} else {
-		klog.V(4).Infof("RecommendedVersion=%q, Have=%q.  No upgrade needed.", recommendedVersion, version)
 	}
+	klog.V(4).Infof("RecommendedVersion=%q, Have=%q.  No upgrade needed.", recommendedVersion, version)
 	return nil, nil
 }
 
@@ -180,9 +180,8 @@ func (v *KubernetesVersionSpec) IsUpgradeRequired(version semver.Version) (bool,
 	if requiredVersion.GT(version) {
 		klog.V(2).Infof("RequiredVersion=%q, Have=%q.  Requiring upgrade", requiredVersion, version)
 		return true, nil
-	} else {
-		klog.V(4).Infof("RequiredVersion=%q, Have=%q.  No upgrade needed.", requiredVersion, version)
 	}
+	klog.V(4).Infof("RequiredVersion=%q, Have=%q.  No upgrade needed.", requiredVersion, version)
 	return false, nil
 }
 
@@ -200,9 +199,8 @@ func (v *KopsVersionSpec) IsUpgradeRequired(version semver.Version) (bool, error
 	if requiredVersion.GT(version) {
 		klog.V(2).Infof("RequiredVersion=%q, Have=%q.  Requiring upgrade", requiredVersion, version)
 		return true, nil
-	} else {
-		klog.V(4).Infof("RequiredVersion=%q, Have=%q.  No upgrade needed.", requiredVersion, version)
 	}
+	klog.V(4).Infof("RequiredVersion=%q, Have=%q.  No upgrade needed.", requiredVersion, version)
 	return false, nil
 }
 
@@ -253,11 +251,9 @@ type CloudProviderID string
 const (
 	CloudProviderALI       CloudProviderID = "alicloud"
 	CloudProviderAWS       CloudProviderID = "aws"
-	CloudProviderBareMetal CloudProviderID = "baremetal"
 	CloudProviderDO        CloudProviderID = "digitalocean"
 	CloudProviderGCE       CloudProviderID = "gce"
 	CloudProviderOpenstack CloudProviderID = "openstack"
-	CloudProviderVSphere   CloudProviderID = "vsphere"
 )
 
 // FindImage returns the image for the cloudprovider, or nil if none found

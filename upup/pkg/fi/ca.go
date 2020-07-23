@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ package fi
 
 import (
 	"bytes"
-	"crypto/x509"
 	"fmt"
 
 	"k8s.io/kops/pkg/apis/kops"
@@ -26,24 +25,21 @@ import (
 	"k8s.io/kops/util/pkg/vfs"
 )
 
-const CertificateId_CA = "ca"
+const CertificateIDCA = "ca"
 
 const (
 	// SecretNameSSHPrimary is the Name for the primary SSH key
 	SecretNameSSHPrimary = "admin"
 )
 
-type KeysetFormat string
-
 const (
-	KeysetFormatLegacy   KeysetFormat = "legacy"
-	KeysetFormatV1Alpha2 KeysetFormat = "v1alpha2"
+	keysetFormatLatest = "v1alpha2"
 )
 
 type KeystoreItem struct {
 	Type kops.KeysetType
 	Name string
-	Id   string
+	ID   string
 	Data []byte
 }
 
@@ -51,12 +47,10 @@ type KeystoreItem struct {
 type Keystore interface {
 	// FindKeypair finds a cert & private key, returning nil where either is not found
 	// (if the certificate is found but not keypair, that is not an error: only the cert will be returned).
-	// This func returns a cert, private key and a string.  The string value is the Format of the keystore which is either
-	// an empty string, which denotes a Legacy Keypair, or a value of "Keypair".  This string is used by a keypair
-	// task convert a Legacy Keypair to the new Keypair API format.
-	FindKeypair(name string) (*pki.Certificate, *pki.PrivateKey, KeysetFormat, error)
-
-	CreateKeypair(signer string, name string, template *x509.Certificate, privateKey *pki.PrivateKey) (*pki.Certificate, error)
+	// This func returns a cert, private key and a bool.  The bool value is whether the keypair is stored
+	// in a legacy format. This bool is used by a keypair
+	// task to convert a Legacy Keypair to the new Keypair API format.
+	FindKeypair(name string) (*pki.Certificate, *pki.PrivateKey, bool, error)
 
 	// StoreKeypair writes the keypair to the store
 	StoreKeypair(id string, cert *pki.Certificate, privateKey *pki.PrivateKey) error
@@ -72,10 +66,6 @@ type HasVFSPath interface {
 
 type CAStore interface {
 	Keystore
-
-	// CertificatePool returns all active certificates with the specified id
-	// Deprecated: prefer FindCertificatePool
-	CertificatePool(name string, createIfMissing bool) (*CertificatePool, error)
 
 	// FindCertificatePool returns the named CertificatePool, or (nil,nil) if not found
 	FindCertificatePool(name string) (*CertificatePool, error)

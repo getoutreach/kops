@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/kops/pkg/apis/kops/util"
 )
 
 // +genclient
@@ -57,6 +59,10 @@ type ClusterSpec struct {
 	ConfigBase string `json:"configBase,omitempty"`
 	// The CloudProvider to use (aws or gce)
 	CloudProvider string `json:"cloudProvider,omitempty"`
+	// GossipConfig for the cluster assuming the use of gossip DNS
+	GossipConfig *GossipConfig `json:"gossipConfig,omitempty"`
+	// Container runtime to use for Kubernetes
+	ContainerRuntime string `json:"containerRuntime,omitempty"`
 	// The version of kubernetes to install (optional, and can be a "spec" like stable)
 	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
 	// Configuration of subnets we are targeting
@@ -94,6 +100,8 @@ type ClusterSpec struct {
 	// Note that DNSZone can either by the host name of the zone (containing dots),
 	// or can be an identifier for the zone.
 	DNSZone string `json:"dnsZone,omitempty"`
+	// DNSControllerGossipConfig for the cluster assuming the use of gossip DNS
+	DNSControllerGossipConfig *DNSControllerGossipConfig `json:"dnsControllerGossipConfig,omitempty"`
 	// AdditionalSANs adds additional Subject Alternate Names to apiserver cert that kops generates
 	AdditionalSANs []string `json:"additionalSans,omitempty"`
 	// ClusterDNSDomain is the suffix we use for internal DNS names (normally cluster.local)
@@ -112,7 +120,7 @@ type ClusterSpec struct {
 	// HTTPProxy defines connection information to support use of a private cluster behind an forward HTTP Proxy
 	EgressProxy *EgressProxySpec `json:"egressProxy,omitempty"`
 	// SSHKeyName specifies a preexisting SSH key to use
-	SSHKeyName string `json:"sshKeyName,omitempty"`
+	SSHKeyName *string `json:"sshKeyName,omitempty"`
 	// KubernetesAPIAccess is a list of the CIDRs that can access the Kubernetes API endpoint (master HTTPS)
 	KubernetesAPIAccess []string `json:"kubernetesApiAccess,omitempty"`
 	// IsolateMasters determines whether we should lock down masters so that they are not on the pod network.
@@ -128,6 +136,8 @@ type ClusterSpec struct {
 	//   'external' do not apply updates automatically - they are applied manually or by an external system
 	//   missing: default policy (currently OS security upgrades that do not require a reboot)
 	UpdatePolicy *string `json:"updatePolicy,omitempty"`
+	// ExternalPolicies allows the insertion of pre-existing managed policies on IG Roles
+	ExternalPolicies *map[string][]string `json:"externalPolicies,omitempty"`
 	// Additional policies to add for roles
 	AdditionalPolicies *map[string]string `json:"additionalPolicies,omitempty"`
 	// A collection of files assets for deployed cluster wide
@@ -135,6 +145,7 @@ type ClusterSpec struct {
 	// EtcdClusters stores the configuration for each cluster
 	EtcdClusters []*EtcdClusterSpec `json:"etcdClusters,omitempty"`
 	// Component configurations
+	Containerd                     *ContainerdConfig             `json:"containerd,omitempty"`
 	Docker                         *DockerConfig                 `json:"docker,omitempty"`
 	KubeDNS                        *KubeDNSConfig                `json:"kubeDNS,omitempty"`
 	KubeAPIServer                  *KubeAPIServerConfig          `json:"kubeAPIServer,omitempty"`
@@ -171,6 +182,15 @@ type ClusterSpec struct {
 	DisableSubnetTags bool `json:"disableSubnetTags,omitempty"`
 	// Target allows for us to nest extra config for targets such as terraform
 	Target *TargetSpec `json:"target,omitempty"`
+	// UseHostCertificates will mount /etc/ssl/certs to inside needed containers.
+	// This is needed if some APIs do have self-signed certs
+	UseHostCertificates *bool `json:"useHostCertificates,omitempty"`
+	// SysctlParameters will configure kernel parameters using sysctl(8). When
+	// specified, each parameter must follow the form variable=value, the way
+	// it would appear in sysctl.conf.
+	SysctlParameters []string `json:"sysctlParameters,omitempty"`
+	// RollingUpdate defines the default rolling-update settings for instance groups
+	RollingUpdate *RollingUpdate `json:"rollingUpdate,omitempty"`
 }
 
 // NodeAuthorizationSpec is used to node authorization
@@ -231,6 +251,7 @@ type Assets struct {
 
 // IAMSpec adds control over the IAM security policies applied to resources
 type IAMSpec struct {
+	// TODO: remove Legacy in next APIVersion
 	Legacy                 bool `json:"legacy"`
 	AllowContainerRegistry bool `json:"allowContainerRegistry,omitempty"`
 }
@@ -315,10 +336,6 @@ type AccessSpec struct {
 	LoadBalancer *LoadBalancerAccessSpec `json:"loadBalancer,omitempty"`
 }
 
-func (s *AccessSpec) IsEmpty() bool {
-	return s.DNS == nil && s.LoadBalancer == nil
-}
-
 type DNSAccessSpec struct {
 }
 
@@ -354,8 +371,12 @@ type KubeDNSConfig struct {
 	CacheMaxSize int `json:"cacheMaxSize,omitempty"`
 	// CacheMaxConcurrent is the maximum number of concurrent queries for dnsmasq
 	CacheMaxConcurrent int `json:"cacheMaxConcurrent,omitempty"`
+	// CoreDNSImage is used to override the default image used for CoreDNS
+	CoreDNSImage string `json:"coreDNSImage,omitempty"`
 	// Domain is the dns domain
 	Domain string `json:"domain,omitempty"`
+	// ExternalCoreFile is used to provide a complete CoreDNS CoreFile by the user - ignores other provided flags which modify the CoreFile.
+	ExternalCoreFile string `json:"externalCoreFile,omitempty"`
 	// Image is the name of the docker image to run - @deprecated as this is now in the addon
 	Image string `json:"image,omitempty"`
 	// Replicas is the number of pod replicas - @deprecated as this is now in the addon and controlled by autoscaler
@@ -374,6 +395,16 @@ type KubeDNSConfig struct {
 	CPURequest *resource.Quantity `json:"cpuRequest,omitempty"`
 	// MemoryLimit specifies the memory limit of each dns container in the cluster. Default 170m.
 	MemoryLimit *resource.Quantity `json:"memoryLimit,omitempty"`
+	// NodeLocalDNS specifies the configuration for the node-local-dns addon
+	NodeLocalDNS *NodeLocalDNSConfig `json:"nodeLocalDNS,omitempty"`
+}
+
+// NodeLocalDNSConfig are options of the node-local-dns
+type NodeLocalDNSConfig struct {
+	// Enabled activates the node-local-dns addon
+	Enabled *bool `json:"enabled,omitempty"`
+	// Local listen IP address. It can be any IP in the 169.254.20.0/16 space or any other IP address that can be guaranteed to not collide with any existing IP.
+	LocalIP string `json:"localIP,omitempty"`
 }
 
 // ExternalDNSConfig are options of the dns-controller
@@ -393,6 +424,11 @@ const (
 	EtcdProviderTypeManager EtcdProviderType = "Manager"
 	EtcdProviderTypeLegacy  EtcdProviderType = "Legacy"
 )
+
+var SupportedEtcdProviderTypes = []string{
+	string(EtcdProviderTypeManager),
+	string(EtcdProviderTypeLegacy),
+}
 
 // EtcdClusterSpec is the etcd cluster specification
 type EtcdClusterSpec struct {
@@ -437,6 +473,11 @@ type EtcdBackupSpec struct {
 type EtcdManagerSpec struct {
 	// Image is the etcd manager image to use.
 	Image string `json:"image,omitempty"`
+	// Env allows users to pass in env variables to the etcd-manager container.
+	// Variables starting with ETCD_ will be further passed down to the etcd process.
+	// This allows etcd setting to be overwriten. No config validation is done.
+	// A list of etcd config ENV vars can be found at https://github.com/etcd-io/etcd/blob/master/Documentation/op-guide/configuration.md
+	Env []EnvVar `json:"env,omitempty"`
 }
 
 // EtcdMemberSpec is a specification for a etcd member
@@ -538,44 +579,7 @@ func (c *Cluster) FillDefaults() error {
 		c.Spec.Networking = &NetworkingSpec{}
 	}
 
-	// TODO move this into networking.go :(
-	if c.Spec.Networking.Classic != nil {
-		// OK
-	} else if c.Spec.Networking.Kubenet != nil {
-		// OK
-	} else if c.Spec.Networking.CNI != nil {
-		// OK
-	} else if c.Spec.Networking.External != nil {
-		// OK
-	} else if c.Spec.Networking.Kopeio != nil {
-		// OK
-	} else if c.Spec.Networking.Weave != nil {
-		// OK
-	} else if c.Spec.Networking.Flannel != nil {
-		// OK
-	} else if c.Spec.Networking.Calico != nil {
-		// OK
-	} else if c.Spec.Networking.Canal != nil {
-		// OK
-	} else if c.Spec.Networking.Kuberouter != nil {
-		// OK
-	} else if c.Spec.Networking.Romana != nil {
-		// OK
-	} else if c.Spec.Networking.AmazonVPC != nil {
-		// OK
-	} else if c.Spec.Networking.Cilium != nil {
-		if c.Spec.Networking.Cilium.Version == "" {
-			c.Spec.Networking.Cilium.Version = CiliumDefaultVersion
-		}
-		// OK
-	} else if c.Spec.Networking.LyftVPC != nil {
-		// OK
-	} else if c.Spec.Networking.GCE != nil {
-		// OK
-	} else {
-		// No networking model selected; choose Kubenet
-		c.Spec.Networking.Kubenet = &KubenetNetworkingSpec{}
-	}
+	c.fillClusterSpecNetworkingSpec()
 
 	if c.Spec.Channel == "" {
 		c.Spec.Channel = DefaultChannel
@@ -596,7 +600,124 @@ func (c *Cluster) FillDefaults() error {
 	return nil
 }
 
+// fillClusterSpecNetworking provides default value if c.Spec.NetworkingSpec is nil
+func (c *Cluster) fillClusterSpecNetworkingSpec() {
+	if c.Spec.Networking.Kubenet != nil {
+		// OK
+	} else if c.Spec.Networking.CNI != nil {
+		// OK
+	} else if c.Spec.Networking.External != nil {
+		// OK
+	} else if c.Spec.Networking.Kopeio != nil {
+		// OK
+	} else if c.Spec.Networking.Weave != nil {
+		// OK
+	} else if c.Spec.Networking.Flannel != nil {
+		// OK
+	} else if c.Spec.Networking.Calico != nil {
+		// OK
+	} else if c.Spec.Networking.Canal != nil {
+		// OK
+	} else if c.Spec.Networking.Kuberouter != nil {
+		// OK
+	} else if c.Spec.Networking.AmazonVPC != nil {
+		// OK
+	} else if c.Spec.Networking.Cilium != nil {
+		// OK
+	} else if c.Spec.Networking.LyftVPC != nil {
+		// OK
+	} else if c.Spec.Networking.GCE != nil {
+		// OK
+	} else {
+		// No networking model selected; choose Kubenet
+		c.Spec.Networking.Kubenet = &KubenetNetworkingSpec{}
+	}
+}
+
 // SharedVPC is a simple helper function which makes the templates for a shared VPC clearer
 func (c *Cluster) SharedVPC() bool {
 	return c.Spec.NetworkID != ""
+}
+
+// IsKubernetesGTE checks if the version is >= the specified version.
+// It panics if the kubernetes version in the cluster is invalid, or if the version is invalid.
+func (c *Cluster) IsKubernetesGTE(version string) bool {
+	clusterVersion, err := util.ParseKubernetesVersion(c.Spec.KubernetesVersion)
+	if err != nil || clusterVersion == nil {
+		panic(fmt.Sprintf("error parsing cluster spec.kubernetesVersion %q", c.Spec.KubernetesVersion))
+	}
+
+	parsedVersion, err := util.ParseKubernetesVersion(version)
+	if err != nil {
+		panic(fmt.Sprintf("Error parsing version %s: %v", version, err))
+	}
+
+	// Ignore Pre & Build fields
+	clusterVersion.Pre = nil
+	clusterVersion.Build = nil
+
+	return clusterVersion.GTE(*parsedVersion)
+}
+
+// EnvVar represents an environment variable present in a Container.
+type EnvVar struct {
+	// Name of the environment variable. Must be a C_IDENTIFIER.
+	Name string `json:"name"`
+
+	// Variable references $(VAR_NAME) are expanded
+	// using the previous defined environment variables in the container and
+	// any service environment variables. If a variable cannot be resolved,
+	// the reference in the input string will be unchanged. The $(VAR_NAME)
+	// syntax can be escaped with a double $$, ie: $$(VAR_NAME). Escaped
+	// references will never be expanded, regardless of whether the variable
+	// exists or not.
+	// Defaults to "".
+	// +optional
+	Value string `json:"value,omitempty"`
+}
+
+type GossipConfig struct {
+	Protocol  *string       `json:"protocol,omitempty"`
+	Listen    *string       `json:"listen,omitempty"`
+	Secret    *string       `json:"secret,omitempty"`
+	Secondary *GossipConfig `json:"secondary,omitempty"`
+}
+
+type DNSControllerGossipConfig struct {
+	Protocol  *string                    `json:"protocol,omitempty"`
+	Listen    *string                    `json:"listen,omitempty"`
+	Secret    *string                    `json:"secret,omitempty"`
+	Secondary *DNSControllerGossipConfig `json:"secondary,omitempty"`
+	Seed      *string                    `json:"seed,omitempty"`
+}
+
+type RollingUpdate struct {
+	// DrainAndTerminate enables draining and terminating nodes during rolling updates.
+	// Defaults to true.
+	DrainAndTerminate *bool `json:"drainAndTerminate,omitempty"`
+	// MaxUnavailable is the maximum number of nodes that can be unavailable during the update.
+	// The value can be an absolute number (for example 5) or a percentage of desired
+	// nodes (for example 10%).
+	// The absolute number is calculated from a percentage by rounding down.
+	// Defaults to 1 if MaxSurge is 0, otherwise defaults to 0.
+	// Example: when this is set to 30%, the InstanceGroup can be scaled
+	// down to 70% of desired nodes immediately when the rolling update
+	// starts. Once new nodes are ready, more old nodes can be drained,
+	// ensuring that the total number of nodes available at all times
+	// during the update is at least 70% of desired nodes.
+	// +optional
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+	// MaxSurge is the maximum number of extra nodes that can be created
+	// during the update.
+	// The value can be an absolute number (for example 5) or a percentage of
+	// desired machines (for example 10%).
+	// The absolute number is calculated from a percentage by rounding up.
+	// Has no effect on instance groups with role "Master".
+	// Defaults to 1 on AWS, 0 otherwise.
+	// Example: when this is set to 30%, the InstanceGroup can be scaled
+	// up immediately when the rolling update starts, such that the total
+	// number of old and new nodes do not exceed 130% of desired
+	// nodes.
+	// +optional
+	MaxSurge *intstr.IntOrString `json:"maxSurge,omitempty"`
 }

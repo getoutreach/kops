@@ -23,9 +23,11 @@ import (
 
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/flagbuilder"
+	"k8s.io/kops/upup/pkg/fi"
+	"k8s.io/kops/util/pkg/architectures"
 	"k8s.io/kops/util/pkg/exec"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,8 +35,8 @@ import (
 
 func TestKubeProxyBuilder_buildPod(t *testing.T) {
 	// kube proxy spec can be found here.
-	// https://godoc.org/k8s.io/kops/pkg/apis/kops#ClusterSpec
-	// https://godoc.org/k8s.io/kops/pkg/apis/kops#KubeProxyConfig
+	// https://pkg.go.dev/k8s.io/kops/pkg/apis/kops#ClusterSpec
+	// https://pkg.go.dev/k8s.io/kops/pkg/apis/kops#KubeProxyConfig
 
 	var cluster = &kops.Cluster{}
 	cluster.Spec.MasterInternalName = "dev-cluster"
@@ -152,4 +154,26 @@ func TestKubeProxyBuilder_buildPod(t *testing.T) {
 
 		})
 	}
+}
+
+func TestKubeProxyBuilder(t *testing.T) {
+	RunGoldenTest(t, "tests/golden/minimal", "kube-proxy", func(nodeupModelContext *NodeupModelContext, target *fi.ModelBuilderContext) error {
+		builder := KubeProxyBuilder{NodeupModelContext: nodeupModelContext}
+		return builder.Build(target)
+	})
+}
+
+func TestKubeProxyBuilderAMD64(t *testing.T) {
+	RunGoldenTest(t, "tests/golden/side-loading", "kube-proxy-amd64", func(nodeupModelContext *NodeupModelContext, target *fi.ModelBuilderContext) error {
+		builder := KubeProxyBuilder{NodeupModelContext: nodeupModelContext}
+		return builder.Build(target)
+	})
+}
+
+func TestKubeProxyBuilderARM64(t *testing.T) {
+	RunGoldenTest(t, "tests/golden/side-loading", "kube-proxy-arm64", func(nodeupModelContext *NodeupModelContext, target *fi.ModelBuilderContext) error {
+		builder := KubeProxyBuilder{NodeupModelContext: nodeupModelContext}
+		builder.Architecture = architectures.ArchitectureArm64
+		return builder.Build(target)
+	})
 }

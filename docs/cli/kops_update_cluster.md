@@ -7,9 +7,9 @@ Update a cluster.
 
 ### Synopsis
 
-Create or update cloud or cluster resources to match current cluster state.  If the cluster or cloud resources already exist this command may modify those resources. 
+Create or update cloud or cluster resources to match current cluster state.  If the cluster or cloud resources already exist this command may modify those resources.
 
-If nodes need updating such as during a Kubernetes upgrade, a rolling-update may be required as well.
+ If nodes need updating such as during a Kubernetes upgrade, a rolling-update may be required as well.
 
 ```
 kops update cluster [flags]
@@ -19,26 +19,29 @@ kops update cluster [flags]
 
 ```
   # After cluster has been edited or upgraded, configure it with:
-  kops update cluster k8s-cluster.example.com --yes --state=s3://kops-state-1234 --yes
+  kops update cluster k8s-cluster.example.com --yes --state=s3://kops-state-1234 --yes --admin
 ```
 
 ### Options
 
 ```
-      --create-kube-config            Will control automatically creating the kube config file on your local filesystem (default true)
+      --admin                         Also export the admin user. Implies --create-kube-config
+      --allow-kops-downgrade          Allow an older version of kops to update the cluster than last used
+      --create-kube-config            Will control automatically creating the kube config file on your local filesystem
   -h, --help                          help for cluster
       --lifecycle-overrides strings   comma separated list of phase overrides, example: SecurityGroups=Ignore,InternetGateway=ExistsAndWarnIfChanges
-      --model string                  Models to apply (separate multiple models with commas) (default "proto,cloudup")
       --out string                    Path to write any local output
       --phase string                  Subset of tasks to run: assets, cluster, network, security
       --ssh-public-key string         SSH public key to use (deprecated: use kops create secret instead)
       --target string                 Target - direct, terraform, cloudformation (default "direct")
+      --user string                   Existing user to add to the cluster context. Implies --create-kube-config
   -y, --yes                           Create cloud resources, without --yes update is in dry run mode
 ```
 
 ### Options inherited from parent commands
 
 ```
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --config string                    yaml config file (default is $HOME/.kops.yaml)
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -48,7 +51,7 @@ kops update cluster [flags]
       --logtostderr                      log to standard error instead of files (default true)
       --name string                      Name of cluster. Overrides KOPS_CLUSTER_NAME environment variable
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --state string                     Location of state storage (kops 'config' file). Overrides KOPS_STATE_STORE environment variable
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
   -v, --v Level                          number for the log level verbosity

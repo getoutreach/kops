@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Kubernetes Authors.
+Copyright 2020 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -27,8 +27,6 @@ import (
 	clientset "k8s.io/kops/pkg/client/clientset_generated/internalclientset"
 	kopsinternalversion "k8s.io/kops/pkg/client/clientset_generated/internalclientset/typed/kops/internalversion"
 	fakekopsinternalversion "k8s.io/kops/pkg/client/clientset_generated/internalclientset/typed/kops/internalversion/fake"
-	kopsv1alpha1 "k8s.io/kops/pkg/client/clientset_generated/internalclientset/typed/kops/v1alpha1"
-	fakekopsv1alpha1 "k8s.io/kops/pkg/client/clientset_generated/internalclientset/typed/kops/v1alpha1/fake"
 	kopsv1alpha2 "k8s.io/kops/pkg/client/clientset_generated/internalclientset/typed/kops/v1alpha2"
 	fakekopsv1alpha2 "k8s.io/kops/pkg/client/clientset_generated/internalclientset/typed/kops/v1alpha2/fake"
 )
@@ -45,7 +43,7 @@ func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 		}
 	}
 
-	cs := &Clientset{}
+	cs := &Clientset{tracker: o}
 	cs.discovery = &fakediscovery.FakeDiscovery{Fake: &cs.Fake}
 	cs.AddReactor("*", "*", testing.ObjectReaction(o))
 	cs.AddWatchReactor("*", func(action testing.Action) (handled bool, ret watch.Interface, err error) {
@@ -67,10 +65,15 @@ func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 type Clientset struct {
 	testing.Fake
 	discovery *fakediscovery.FakeDiscovery
+	tracker   testing.ObjectTracker
 }
 
 func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 	return c.discovery
+}
+
+func (c *Clientset) Tracker() testing.ObjectTracker {
+	return c.tracker
 }
 
 var _ clientset.Interface = &Clientset{}
@@ -78,11 +81,6 @@ var _ clientset.Interface = &Clientset{}
 // Kops retrieves the KopsClient
 func (c *Clientset) Kops() kopsinternalversion.KopsInterface {
 	return &fakekopsinternalversion.FakeKops{Fake: &c.Fake}
-}
-
-// KopsV1alpha1 retrieves the KopsV1alpha1Client
-func (c *Clientset) KopsV1alpha1() kopsv1alpha1.KopsV1alpha1Interface {
-	return &fakekopsv1alpha1.FakeKopsV1alpha1{Fake: &c.Fake}
 }
 
 // KopsV1alpha2 retrieves the KopsV1alpha2Client

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ func DecodeGCELabel(s string) (string, error) {
 	uriForm := strings.Replace(s, "-", "%", -1)
 	v, err := url.QueryUnescape(uriForm)
 	if err != nil {
-		return "", fmt.Errorf("Cannot decode GCE label: %q", s)
+		return "", fmt.Errorf("cannot decode GCE label: %q", s)
 	}
 	return v, nil
 }

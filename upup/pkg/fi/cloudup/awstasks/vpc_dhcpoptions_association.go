@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -102,8 +102,8 @@ func (_ *VPCDHCPOptionsAssociation) RenderAWS(t *awsup.AWSAPITarget, a, e, chang
 }
 
 type terraformVPCDHCPOptionsAssociation struct {
-	VPCID         *terraform.Literal `json:"vpc_id"`
-	DHCPOptionsID *terraform.Literal `json:"dhcp_options_id"`
+	VPCID         *terraform.Literal `json:"vpc_id" cty:"vpc_id"`
+	DHCPOptionsID *terraform.Literal `json:"dhcp_options_id" cty:"dhcp_options_id"`
 }
 
 func (_ *VPCDHCPOptionsAssociation) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *VPCDHCPOptionsAssociation) error {

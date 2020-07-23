@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,37 +22,73 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/template"
 
 	"github.com/ghodss/yaml"
 	"k8s.io/klog"
+	"k8s.io/kops/upup/pkg/fi/utils"
 
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/nodeup"
 	"k8s.io/kops/pkg/model/resources"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
+	"k8s.io/kops/util/pkg/architectures"
 )
 
-// BootstrapScript creates the bootstrap script
-type BootstrapScript struct {
-	NodeUpSource        string
-	NodeUpSourceHash    string
-	NodeUpConfigBuilder func(ig *kops.InstanceGroup) (*nodeup.Config, error)
+type NodeUpConfigBuilder interface {
+	BuildConfig(ig *kops.InstanceGroup, apiserverAdditionalIPs []string) (*nodeup.Config, error)
 }
 
-// KubeEnv returns the nodeup config for the instance group
-func (b *BootstrapScript) KubeEnv(ig *kops.InstanceGroup) (string, error) {
-	config, err := b.NodeUpConfigBuilder(ig)
+// BootstrapScriptBuilder creates the bootstrap script
+type BootstrapScriptBuilder struct {
+	NodeUpSource        map[architectures.Architecture]string
+	NodeUpSourceHash    map[architectures.Architecture]string
+	NodeUpConfigBuilder NodeUpConfigBuilder
+}
+
+type BootstrapScript struct {
+	Name     string
+	ig       *kops.InstanceGroup
+	builder  *BootstrapScriptBuilder
+	resource fi.TaskDependentResource
+	// alternateNameTasks are tasks that contribute api-server IP addresses.
+	alternateNameTasks []fi.HasAddress
+}
+
+var _ fi.Task = &BootstrapScript{}
+var _ fi.HasName = &BootstrapScript{}
+var _ fi.HasDependencies = &BootstrapScript{}
+
+// kubeEnv returns the nodeup config for the instance group
+func (b *BootstrapScript) kubeEnv(ig *kops.InstanceGroup, c *fi.Context) (string, error) {
+	var alternateNames []string
+
+	for _, hasAddress := range b.alternateNameTasks {
+		address, err := hasAddress.FindIPAddress(c)
+		if err != nil {
+			return "", fmt.Errorf("error finding address for %v: %v", hasAddress, err)
+		}
+		if address == nil {
+			klog.Warningf("Task did not have an address: %v", hasAddress)
+			continue
+		}
+		klog.V(8).Infof("Resolved alternateName %q for %q", *address, hasAddress)
+		alternateNames = append(alternateNames, *address)
+	}
+
+	sort.Strings(alternateNames)
+	config, err := b.builder.NodeUpConfigBuilder.BuildConfig(ig, alternateNames)
 	if err != nil {
 		return "", err
 	}
 
-	data, err := kops.ToRawYaml(config)
+	data, err := utils.YamlMarshal(config)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error converting nodeup config to yaml: %v", err)
 	}
 
 	return string(data), nil
@@ -128,44 +164,92 @@ func (b *BootstrapScript) buildEnvironmentVariables(cluster *kops.Cluster) (map[
 
 // ResourceNodeUp generates and returns a nodeup (bootstrap) script from a
 // template file, substituting in specific env vars & cluster spec configuration
-func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.Cluster) (*fi.ResourceHolder, error) {
+func (b *BootstrapScriptBuilder) ResourceNodeUp(c *fi.ModelBuilderContext, ig *kops.InstanceGroup) (*fi.ResourceHolder, error) {
 	// Bastions can have AdditionalUserData, but if there isn't any skip this part
 	if ig.IsBastion() && len(ig.Spec.AdditionalUserData) == 0 {
-		return nil, nil
+		templateResource, err := NewTemplateResource("nodeup", "", nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		return fi.WrapResource(templateResource), nil
 	}
 
+	task := &BootstrapScript{
+		Name:    ig.Name,
+		ig:      ig,
+		builder: b,
+	}
+	task.resource.Task = task
+	c.AddTask(task)
+	return fi.WrapResource(&task.resource), nil
+}
+
+func (b *BootstrapScript) GetName() *string {
+	return &b.Name
+}
+
+func (b *BootstrapScript) GetDependencies(tasks map[string]fi.Task) []fi.Task {
+	var deps []fi.Task
+
+	for _, task := range tasks {
+		if hasAddress, ok := task.(fi.HasAddress); ok && hasAddress.IsForAPIServer() {
+			deps = append(deps, task)
+			b.alternateNameTasks = append(b.alternateNameTasks, hasAddress)
+		}
+	}
+
+	return deps
+}
+
+func (b *BootstrapScript) Run(c *fi.Context) error {
 	functions := template.FuncMap{
-		"NodeUpSource": func() string {
-			return b.NodeUpSource
+		"NodeUpSourceAmd64": func() string {
+			return b.builder.NodeUpSource[architectures.ArchitectureAmd64]
 		},
-		"NodeUpSourceHash": func() string {
-			return b.NodeUpSourceHash
+		"NodeUpSourceHashAmd64": func() string {
+			return b.builder.NodeUpSourceHash[architectures.ArchitectureAmd64]
+		},
+		"NodeUpSourceArm64": func() string {
+			return b.builder.NodeUpSource[architectures.ArchitectureArm64]
+		},
+		"NodeUpSourceHashArm64": func() string {
+			return b.builder.NodeUpSourceHash[architectures.ArchitectureArm64]
 		},
 		"KubeEnv": func() (string, error) {
-			return b.KubeEnv(ig)
+			return b.kubeEnv(b.ig, c)
 		},
 
 		"EnvironmentVariables": func() (string, error) {
-			env, err := b.buildEnvironmentVariables(cluster)
+			env, err := b.buildEnvironmentVariables(c.Cluster)
 			if err != nil {
 				return "", err
 			}
+
+			// Sort keys to have a stable sequence of "export xx=xxx"" statements
+			var keys []string
+			for k := range env {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
 			var b bytes.Buffer
-			for k, v := range env {
-				b.WriteString(fmt.Sprintf("export %s=%s\n", k, v))
+			for _, k := range keys {
+				b.WriteString(fmt.Sprintf("export %s=%s\n", k, env[k]))
 			}
 			return b.String(), nil
 		},
 
 		"ProxyEnv": func() string {
-			return b.createProxyEnv(cluster.Spec.EgressProxy)
+			return b.createProxyEnv(c.Cluster.Spec.EgressProxy)
 		},
 
 		"ClusterSpec": func() (string, error) {
-			cs := cluster.Spec
+			cs := c.Cluster.Spec
 
 			spec := make(map[string]interface{})
 			spec["cloudConfig"] = cs.CloudConfig
+			spec["containerRuntime"] = cs.ContainerRuntime
+			spec["containerd"] = cs.Containerd
 			spec["docker"] = cs.Docker
 			spec["kubeProxy"] = cs.KubeProxy
 			spec["kubelet"] = cs.Kubelet
@@ -179,9 +263,9 @@ func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.C
 				}
 			}
 
-			if ig.IsMaster() {
+			if b.ig.IsMaster() {
 				spec["encryptionConfig"] = cs.EncryptionConfig
-				spec["etcdClusters"] = make(map[string]kops.EtcdClusterSpec, 0)
+				spec["etcdClusters"] = make(map[string]kops.EtcdClusterSpec)
 				spec["kubeAPIServer"] = cs.KubeAPIServer
 				spec["kubeControllerManager"] = cs.KubeControllerManager
 				spec["kubeScheduler"] = cs.KubeScheduler
@@ -204,7 +288,7 @@ func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.C
 				}
 			}
 
-			hooks, err := b.getRelevantHooks(cs.Hooks, ig.Spec.Role)
+			hooks, err := b.getRelevantHooks(cs.Hooks, b.ig.Spec.Role)
 			if err != nil {
 				return "", err
 			}
@@ -212,7 +296,7 @@ func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.C
 				spec["hooks"] = hooks
 			}
 
-			fileAssets, err := b.getRelevantFileAssets(cs.FileAssets, ig.Spec.Role)
+			fileAssets, err := b.getRelevantFileAssets(cs.FileAssets, b.ig.Spec.Role)
 			if err != nil {
 				return "", err
 			}
@@ -229,11 +313,8 @@ func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.C
 
 		"IGSpec": func() (string, error) {
 			spec := make(map[string]interface{})
-			spec["kubelet"] = ig.Spec.Kubelet
-			spec["nodeLabels"] = ig.Spec.NodeLabels
-			spec["taints"] = ig.Spec.Taints
 
-			hooks, err := b.getRelevantHooks(ig.Spec.Hooks, ig.Spec.Role)
+			hooks, err := b.getRelevantHooks(b.ig.Spec.Hooks, b.ig.Spec.Role)
 			if err != nil {
 				return "", err
 			}
@@ -241,7 +322,7 @@ func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.C
 				spec["hooks"] = hooks
 			}
 
-			fileAssets, err := b.getRelevantFileAssets(ig.Spec.FileAssets, ig.Spec.Role)
+			fileAssets, err := b.getRelevantFileAssets(b.ig.Spec.FileAssets, b.ig.Spec.Role)
 			if err != nil {
 				return "", err
 			}
@@ -257,17 +338,18 @@ func (b *BootstrapScript) ResourceNodeUp(ig *kops.InstanceGroup, cluster *kops.C
 		},
 	}
 
-	awsNodeUpTemplate, err := resources.AWSNodeUpTemplate(ig)
+	awsNodeUpTemplate, err := resources.AWSNodeUpTemplate(b.ig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	templateResource, err := NewTemplateResource("nodeup", awsNodeUpTemplate, functions, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return fi.WrapResource(templateResource), nil
+	b.resource.Resource = templateResource
+	return nil
 }
 
 // getRelevantHooks returns a list of hooks to be applied to the instance group,
@@ -394,7 +476,7 @@ func (b *BootstrapScript) createProxyEnv(ps *kops.EgressProxySpec) string {
 		// Load the proxy environment variables
 		buffer.WriteString("while read in; do export $in; done < /etc/environment\n")
 
-		// Set env variables for package manager depending on OS Distribution (N/A for CoreOS)
+		// Set env variables for package manager depending on OS Distribution (N/A for Flatcar)
 		// Note: Nodeup will source the `/etc/environment` file within docker config in the correct location
 		buffer.WriteString("case `cat /proc/version` in\n")
 		buffer.WriteString("*[Dd]ebian*)\n")
@@ -402,7 +484,7 @@ func (b *BootstrapScript) createProxyEnv(ps *kops.EgressProxySpec) string {
 		buffer.WriteString("*[Uu]buntu*)\n")
 		buffer.WriteString(`  echo "Acquire::http::Proxy \"${http_proxy}\";" > /etc/apt/apt.conf.d/30proxy ;;` + "\n")
 		buffer.WriteString("*[Rr]ed[Hh]at*)\n")
-		buffer.WriteString(`  echo "http_proxy=${http_proxy}" >> /etc/yum.conf ;;` + "\n")
+		buffer.WriteString(`  echo "proxy=${http_proxy}" >> /etc/yum.conf ;;` + "\n")
 		buffer.WriteString("esac\n")
 
 		// Set env variables for systemd

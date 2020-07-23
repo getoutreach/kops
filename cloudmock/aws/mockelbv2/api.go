@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,12 +36,10 @@ type MockELBV2 struct {
 
 type loadBalancer struct {
 	description elbv2.LoadBalancer
-	tags        map[string]string
 }
 
 type targetGroup struct {
 	description elbv2.TargetGroup
-	tags        map[string]string
 }
 
 func (m *MockELBV2) DescribeLoadBalancers(request *elbv2.DescribeLoadBalancersInput) (*elbv2.DescribeLoadBalancersOutput, error) {

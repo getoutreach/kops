@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"os"
 
 	"k8s.io/klog"
 )
@@ -102,9 +103,8 @@ func parsePEMCertificate(pemData []byte) (*x509.Certificate, error) {
 		if block.Type == "CERTIFICATE" {
 			klog.V(10).Infof("Parsing pem block: %q", block.Type)
 			return x509.ParseCertificate(block.Bytes)
-		} else {
-			klog.Infof("Ignoring unexpected PEM block: %q", block.Type)
 		}
+		klog.Infof("Ignoring unexpected PEM block: %q", block.Type)
 
 		pemData = rest
 	}
@@ -150,4 +150,16 @@ func (c *Certificate) WriteTo(w io.Writer) (int64, error) {
 		return 0, err
 	}
 	return b.WriteTo(w)
+}
+
+func (c *Certificate) WriteToFile(filename string, perm os.FileMode) error {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	_, err = c.WriteTo(f)
+	if err1 := f.Close(); err == nil {
+		err = err1
+	}
+	return err
 }

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,23 +17,17 @@ limitations under the License.
 package model
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
 
 	"k8s.io/kops/pkg/apis/kops"
-	"k8s.io/kops/pkg/apis/kops/util"
-	"k8s.io/kops/pkg/try"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/nodeup/nodetasks"
 )
 
 const (
 	CloudConfigFilePath = "/etc/kubernetes/cloud.config"
-
-	// Required for vSphere CloudProvider
-	MinimumVersionForVMUUID = "1.5.3"
 
 	// VM UUID is set by cloud-init
 	VM_UUID_FILE_PATH = "/etc/vmware/vm_uuid"
@@ -75,37 +69,6 @@ func (b *CloudConfigBuilder) Build(c *fi.ModelBuilderContext) error {
 		if cloudConfig.ElbSecurityGroup != nil {
 			lines = append(lines, "ElbSecurityGroup = "+*cloudConfig.ElbSecurityGroup)
 		}
-	case "vsphere":
-		vm_uuid, err := getVMUUID(b.Cluster.Spec.KubernetesVersion)
-		if err != nil {
-			return err
-		}
-		// Note: Segregate configuration for different sections as below
-		// Global Config for vSphere CloudProvider
-		if cloudConfig.VSphereUsername != nil {
-			lines = append(lines, "user = "+*cloudConfig.VSphereUsername)
-		}
-		if cloudConfig.VSpherePassword != nil {
-			lines = append(lines, "password = "+*cloudConfig.VSpherePassword)
-		}
-		if cloudConfig.VSphereServer != nil {
-			lines = append(lines, "server = "+*cloudConfig.VSphereServer)
-			lines = append(lines, "port = 443")
-			lines = append(lines, fmt.Sprintf("insecure-flag = %t", true))
-		}
-		if cloudConfig.VSphereDatacenter != nil {
-			lines = append(lines, "datacenter = "+*cloudConfig.VSphereDatacenter)
-		}
-		if cloudConfig.VSphereDatastore != nil {
-			lines = append(lines, "datastore = "+*cloudConfig.VSphereDatastore)
-		}
-		if vm_uuid != "" {
-			lines = append(lines, "vm-uuid = "+strings.Trim(vm_uuid, "\n"))
-		}
-		// Disk Config for vSphere CloudProvider
-		// We need this to support Kubernetes vSphere CloudProvider < v1.5.3
-		lines = append(lines, "[disk]")
-		lines = append(lines, "scsicontrollertype = pvscsi")
 	case "openstack":
 		osc := cloudConfig.Openstack
 		if osc == nil {
@@ -174,36 +137,4 @@ func (b *CloudConfigBuilder) Build(c *fi.ModelBuilderContext) error {
 	c.AddTask(t)
 
 	return nil
-}
-
-// We need this for vSphere CloudProvider
-// getVMUUID gets instance uuid of the VM from the file written by cloud-init
-func getVMUUID(kubernetesVersion string) (string, error) {
-
-	actualKubernetesVersion, err := util.ParseKubernetesVersion(kubernetesVersion)
-	if err != nil {
-		return "", err
-	}
-	minimumVersionForUUID, err := util.ParseKubernetesVersion(MinimumVersionForVMUUID)
-	if err != nil {
-		return "", err
-	}
-
-	// VM UUID is required only for Kubernetes version greater than 1.5.3
-	if actualKubernetesVersion.GTE(*minimumVersionForUUID) {
-		file, err := os.Open(VM_UUID_FILE_PATH)
-		if err != nil {
-			return "", err
-		}
-
-		defer try.CloseFile(file)
-
-		vm_uuid, err := bufio.NewReader(file).ReadString('\n')
-		if err != nil {
-			return "", err
-		}
-		return vm_uuid, err
-	}
-
-	return "", err
 }

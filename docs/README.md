@@ -1,29 +1,37 @@
 # Documentation Index
 
+For a better viewing experience please check out our live documentation site at [kops.sigs.k8s.io](https://kops.sigs.k8s.io/).
+
 ## Quick start
-* [Getting started on AWS](aws.md)
-* [Getting started on GCE](tutorial/gce.md)
+* [Getting started on AWS](getting_started/aws.md)
+* [Getting started on GCE](getting_started/gce.md)
 * [CLI reference](cli/kops.md)
 
 
 ## Overview
 
-* [Command-line interface](#command-line-interface)
-* [Inspection](#inspection)
-* [`kops` design documents](#kops-design-documents)
-* [Networking](#networking)
-* [Operations](#operations)
-* [Security](#security)
-* [Development](#development)
+- [Documentation Index](#documentation-index)
+  - [Quick start](#quick-start)
+  - [Overview](#overview)
+  - [Command-line interface](#command-line-interface)
+  - [Advanced / Detailed List of Configurations](#advanced--detailed-list-of-configurations)
+    - [API / Configuration References](#api--configuration-references)
+    - [API Usage Guides](#api-usage-guides)
+  - [Operations](#operations)
+  - [Networking](#networking)
+  - [`kops` design documents](#kops-design-documents)
+  - [Security](#security)
+  - [Inspection](#inspection)
+  - [Development](#development)
 
 
 ## Command-line interface
 
 * [CLI argument explanations](arguments.md)
 * [CLI reference](cli/kops.md)
-* [Commands](commands.md)
+* [Commands](usage/commands.md)
     * miscellaneous CLI-related remarks
-* [Experimental features](experimental.md)
+* [Experimental features](advanced/experimental.md)
     * list of and how to enable experimental flags in the CLI
 * [kubectl](kubectl.md)
     * how to point kubectl to your `kops` cluster
@@ -31,8 +39,8 @@
 ## Advanced / Detailed List of Configurations
 
 ### API / Configuration References
-* [Godocs for Cluster - `ClusterSpec`](https://godoc.org/k8s.io/kops/pkg/apis/kops#ClusterSpec).
-* [Godocs for Instance Group - `InstanceGroupSpec`](https://godoc.org/k8s.io/kops/pkg/apis/kops#InstanceGroupSpec).
+* [Godocs for Cluster - `ClusterSpec`](https://pkg.go.dev/k8s.io/kops/pkg/apis/kops#ClusterSpec).
+* [Godocs for Instance Group - `InstanceGroupSpec`](https://pkg.go.dev/k8s.io/kops/pkg/apis/kops#InstanceGroupSpec).
 
 ### API Usage Guides
 * [`kops` cluster API definitions](cluster_spec.md)
@@ -42,28 +50,27 @@
 * [Using Manifests and Customizing via the API](manifests_and_customizing_via_api.md)
 
 ## Operations
-* [Cluster addon manager](addon_manager.md)
-* [Cluster addons](addons.md)
+* [Cluster addon manager](operations/addons.md#addon_management)
+* [Cluster addons](operations/addons.md)
 * [Cluster configuration management](changing_configuration.md)
-* [Cluster desired configuration creation from template](cluster_template.md)
-* [Cluster upgrades and migrations](cluster_upgrades_and_migrations.md)
-* [`etcd` volume encryption setup](etcd_volume_encryption.md)
-* [`etcd` backup/restore](etcd/backup-restore.md)
+* [Cluster desired configuration creation from template](operations/cluster_template.md)
+* [Cluster upgrades and migrations](operations/cluster_upgrades_and_migrations.md)
+* [`etcd` volume encryption setup](operations/etcd_backup_restore_encryption.md#etcd-volume-encryption)
+* [`etcd` backup/restore](operations/etcd_backup_restore_encryption.md#backing-up-etcd)
 * [GPU setup](gpu.md)
-* [High Availability](high_availability.md)
-* [InstanceGroup images](images.md)
+* [High Availability](operations/high_availability.md)
+* [InstanceGroup Images](operations/images.md)
     * how to use other image for cluster nodes, and information on available/tested images
-* [`k8s` upgrading](upgrade.md)
-* [`kops` updating](update_kops.md)
+* [`k8s` upgrading](operations/updates_and_upgrades.md#upgrading-kubernetes)
+* [`kops` updating](operations/updates_and_upgrades.md#updating-kops)
 * [`kube-up` to `kops` upgrade](upgrade_from_kubeup.md)
 * [Label management](labels.md)
     * for cluster nodes
 * [Secret management](secrets.md)
+* [Service Account Token Volume Projection](operations/service_account_token_volumes.md)
 * [Moving from a Single Master to Multiple HA Masters](single-to-multi-master.md)
 * [Upgrading Kubernetes](tutorial/upgrading-kubernetes.md)
 * [Working with Instance Groups](tutorial/working-with-instancegroups.md)
-* [Developers guide for vSphere support](vsphere-dev.md)
-* [vSphere support status](vsphere-development-status.md)
 * [Running `kops` in a CI environment](continuous_integration.md)
 
 ## Networking
@@ -93,15 +100,14 @@
 
 ## Inspection
 
-* [Download `kops` configuration](download_config.md)
+* [Download `kops` configuration](advanced/download_config.md)
     * methods to download the current generated `kops` configuration
-* [Get AWS subdomain NS records](ns.md)
+* [Get AWS subdomain NS records](advanced/ns.md)
 
 
 ## Development
 
 * [Developing using Docker](development/Docker.md)
-* [Development with vSphere](vsphere-dev.md)
 * [Documentation Guidelines](development/documentation.md)
 * [E2E testing with `kops` clusters](development/testing.md)
 * [Example on how to add a feature](development/adding_a_feature.md)

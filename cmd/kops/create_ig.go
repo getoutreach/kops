@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -27,15 +28,16 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog"
 	"k8s.io/kops/cmd/kops/util"
-	api "k8s.io/kops/pkg/apis/kops"
+	kopsapi "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/kops/validation"
 	"k8s.io/kops/pkg/kopscodecs"
 	"k8s.io/kops/pkg/try"
 	"k8s.io/kops/upup/pkg/fi/cloudup"
-	"k8s.io/kubernetes/pkg/kubectl/cmd/util/editor"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/cmd/util/editor"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 type CreateInstanceGroupOptions struct {
@@ -75,7 +77,7 @@ var (
 // NewCmdCreateInstanceGroup create a new cobra command object for creating a instancegroup.
 func NewCmdCreateInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 	options := &CreateInstanceGroupOptions{
-		Role: string(api.InstanceGroupRoleNode),
+		Role: string(kopsapi.InstanceGroupRoleNode),
 		Edit: true,
 	}
 
@@ -86,7 +88,8 @@ func NewCmdCreateInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    createIgLong,
 		Example: createIgExample,
 		Run: func(cmd *cobra.Command, args []string) {
-			err := RunCreateInstanceGroup(f, cmd, args, os.Stdout, options)
+			ctx := context.TODO()
+			err := RunCreateInstanceGroup(ctx, f, cmd, args, os.Stdout, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -95,7 +98,7 @@ func NewCmdCreateInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 
 	// TODO: Create Enum helper - or is there one in k8s already?
 	var allRoles []string
-	for _, r := range api.AllInstanceGroupRoles {
+	for _, r := range kopsapi.AllInstanceGroupRoles {
 		allRoles = append(allRoles, string(r))
 	}
 
@@ -109,7 +112,7 @@ func NewCmdCreateInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, out io.Writer, options *CreateInstanceGroupOptions) error {
+func RunCreateInstanceGroup(ctx context.Context, f *util.Factory, cmd *cobra.Command, args []string, out io.Writer, options *CreateInstanceGroupOptions) error {
 	if len(args) == 0 {
 		return fmt.Errorf("Specify name of instance group to create")
 	}
@@ -118,7 +121,7 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 	}
 	groupName := args[0]
 
-	cluster, err := rootCommand.Cluster()
+	cluster, err := rootCommand.Cluster(ctx)
 	if err != nil {
 		return err
 	}
@@ -130,10 +133,10 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 
 	channel, err := cloudup.ChannelForCluster(cluster)
 	if err != nil {
-		return err
+		klog.Warningf("%v", err)
 	}
 
-	existing, err := clientset.InstanceGroupsFor(cluster).Get(groupName, metav1.GetOptions{})
+	existing, err := clientset.InstanceGroupsFor(cluster).Get(ctx, groupName, metav1.GetOptions{})
 	if err != nil {
 		// We expect a NotFound error when creating the instance group
 		if !errors.IsNotFound(err) {
@@ -146,10 +149,10 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 	}
 
 	// Populate some defaults
-	ig := &api.InstanceGroup{}
+	ig := &kopsapi.InstanceGroup{}
 	ig.ObjectMeta.Name = groupName
 
-	role, ok := api.ParseInstanceGroupRole(options.Role, true)
+	role, ok := kopsapi.ParseInstanceGroupRole(options.Role, true)
 	if !ok {
 		return fmt.Errorf("unknown role %q", options.Role)
 	}
@@ -163,6 +166,10 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 	}
 
 	ig.AddInstanceGroupNodeLabel()
+	if kopsapi.CloudProviderID(cluster.Spec.CloudProvider) == kopsapi.CloudProviderGCE {
+		fmt.Println("detected a GCE cluster; labeling nodes to receive metadata-proxy.")
+		ig.Spec.NodeLabels["cloud.google.com/metadata-proxy-ready"] = "true"
+	}
 
 	if options.DryRun {
 
@@ -172,7 +179,7 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 
 		// Cluster name is not populated, and we need it
 		ig.ObjectMeta.Labels = make(map[string]string)
-		ig.ObjectMeta.Labels[api.LabelClusterName] = cluster.ObjectMeta.Name
+		ig.ObjectMeta.Labels[kopsapi.LabelClusterName] = cluster.ObjectMeta.Name
 
 		switch options.Output {
 		case OutputYaml:
@@ -216,12 +223,17 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 		if err != nil {
 			return fmt.Errorf("error parsing yaml: %v", err)
 		}
-		group, ok := obj.(*api.InstanceGroup)
+		group, ok := obj.(*kopsapi.InstanceGroup)
 		if !ok {
 			return fmt.Errorf("unexpected object type: %T", obj)
 		}
 
-		err = validation.ValidateInstanceGroup(group)
+		cloud, err := cloudup.BuildCloud(cluster)
+		if err != nil {
+			return err
+		}
+
+		err = validation.CrossValidateInstanceGroup(group, cluster, cloud).ToAggregate()
 		if err != nil {
 			return err
 		}
@@ -229,7 +241,7 @@ func RunCreateInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, 
 		ig = group
 	}
 
-	_, err = clientset.InstanceGroupsFor(cluster).Create(ig)
+	_, err = clientset.InstanceGroupsFor(cluster).Create(ctx, ig, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("error storing InstanceGroup: %v", err)
 	}

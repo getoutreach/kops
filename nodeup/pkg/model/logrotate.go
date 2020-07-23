@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -43,8 +43,6 @@ func (b *LogrotateBuilder) Build(c *fi.ModelBuilderContext) error {
 	case distros.DistributionContainerOS:
 		klog.Infof("Detected ContainerOS; won't install logrotate")
 		return nil
-	case distros.DistributionCoreOS:
-		klog.Infof("Detected CoreOS; won't install logrotate")
 	case distros.DistributionFlatcar:
 		klog.Infof("Detected Flatcar; won't install logrotate")
 	default:
@@ -56,11 +54,6 @@ func (b *LogrotateBuilder) Build(c *fi.ModelBuilderContext) error {
 		return fmt.Errorf("unable to parse KubernetesVersion %q", b.Cluster.Spec.KubernetesVersion)
 	}
 
-	if k8sVersion.Major == 1 && k8sVersion.Minor < 6 {
-		// In version 1.6, we move log rotation to docker, but prior to that we need a logrotate rule
-		b.addLogRotate(c, "docker-containers", "/var/lib/docker/containers/*/*-json.log", logRotateOptions{MaxSize: "10M"})
-	}
-
 	b.addLogRotate(c, "docker", "/var/log/docker.log", logRotateOptions{})
 	b.addLogRotate(c, "kube-addons", "/var/log/kube-addons.log", logRotateOptions{})
 	b.addLogRotate(c, "kube-apiserver", "/var/log/kube-apiserver.log", logRotateOptions{})
@@ -68,6 +61,8 @@ func (b *LogrotateBuilder) Build(c *fi.ModelBuilderContext) error {
 	b.addLogRotate(c, "kube-proxy", "/var/log/kube-proxy.log", logRotateOptions{})
 	b.addLogRotate(c, "kube-scheduler", "/var/log/kube-scheduler.log", logRotateOptions{})
 	b.addLogRotate(c, "kubelet", "/var/log/kubelet.log", logRotateOptions{})
+	b.addLogRotate(c, "etcd", "/var/log/etcd.log", logRotateOptions{})
+	b.addLogRotate(c, "etcd-events", "/var/log/etcd-events.log", logRotateOptions{})
 
 	if err := b.addLogrotateService(c); err != nil {
 		return err
@@ -95,7 +90,7 @@ func (b *LogrotateBuilder) Build(c *fi.ModelBuilderContext) error {
 // addLogrotateService creates a logrotate systemd task to act as target for the timer, if one is needed
 func (b *LogrotateBuilder) addLogrotateService(c *fi.ModelBuilderContext) error {
 	switch b.Distribution {
-	case distros.DistributionCoreOS, distros.DistributionFlatcar, distros.DistributionContainerOS:
+	case distros.DistributionFlatcar, distros.DistributionContainerOS:
 		// logrotate service already exists
 		return nil
 	}
@@ -122,12 +117,6 @@ type logRotateOptions struct {
 func (b *LogrotateBuilder) addLogRotate(c *fi.ModelBuilderContext, name, path string, options logRotateOptions) {
 	if options.MaxSize == "" {
 		options.MaxSize = "100M"
-	}
-
-	// CoreOS sets "dateext" options, and maxsize-based rotation will fail if
-	// the file has been previously rotated on the same calendar date.
-	if b.Distribution == distros.DistributionCoreOS {
-		options.DateFormat = "-%Y%m%d-%s"
 	}
 
 	// Flatcar sets "dateext" options, and maxsize-based rotation will fail if

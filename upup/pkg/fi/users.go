@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -91,7 +91,7 @@ func LookupUser(name string) (*User, error) {
 	return users[name], nil
 }
 
-func LookupUserById(uid int) (*User, error) {
+func LookupUserByID(uid int) (*User, error) {
 	users, err := parseUsers()
 	if err != nil {
 		return nil, fmt.Errorf("error reading users: %v", err)
@@ -155,7 +155,7 @@ func LookupGroup(name string) (*Group, error) {
 	return groups[name], nil
 }
 
-func LookupGroupById(gid int) (*Group, error) {
+func LookupGroupByID(gid int) (*Group, error) {
 	users, err := parseGroups()
 	if err != nil {
 		return nil, fmt.Errorf("error reading groups: %v", err)

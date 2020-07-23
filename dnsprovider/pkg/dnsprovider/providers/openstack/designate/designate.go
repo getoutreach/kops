@@ -34,7 +34,7 @@ const (
 )
 
 func init() {
-	dnsprovider.RegisterDnsProvider(ProviderName, func(config io.Reader) (dnsprovider.Interface, error) {
+	dnsprovider.RegisterDNSProvider(ProviderName, func(config io.Reader) (dnsprovider.Interface, error) {
 		return newDesignate(config)
 	})
 }
@@ -77,7 +77,7 @@ func newDesignate(_ io.Reader) (*Interface, error) {
 	}
 	sc, err := openstack.NewDNSV2(provider, endpointOpt)
 	if err != nil {
-
+		return nil, fmt.Errorf("error creating a ServiceClient: %v", err)
 	}
 	return New(sc), nil
 }

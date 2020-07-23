@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,9 +37,9 @@ func FindDistribution(rootfs string) (Distribution, error) {
 			if line == "DISTRIB_CODENAME=xenial" {
 				return DistributionXenial, nil
 			} else if line == "DISTRIB_CODENAME=bionic" {
-				klog.Warningf("bionic is not fully supported nor tested for Kops and Kubernetes")
-				klog.Warningf("this should only be used for testing purposes.")
 				return DistributionBionic, nil
+			} else if line == "DISTRIB_CODENAME=focal" {
+				return DistributionFocal, nil
 			}
 		}
 	} else if !os.IsNotExist(err) {
@@ -51,7 +51,7 @@ func FindDistribution(rootfs string) (Distribution, error) {
 	if err == nil {
 		debianVersion := strings.TrimSpace(string(debianVersionBytes))
 		if strings.HasPrefix(debianVersion, "8.") {
-			return DistributionJessie, nil
+			return "", fmt.Errorf("distribution Degian 8 (Jessie) is no longer supported")
 		} else if strings.HasPrefix(debianVersion, "9.") {
 			return DistributionDebian9, nil
 		} else if strings.HasPrefix(debianVersion, "10.") {
@@ -87,14 +87,13 @@ func FindDistribution(rootfs string) (Distribution, error) {
 		klog.Warningf("error reading /etc/redhat-release: %v", err)
 	}
 
-	// CoreOS uses /usr/lib/os-release
 	// Flatcar uses /usr/lib/os-release
 	usrLibOsRelease, err := ioutil.ReadFile(path.Join(rootfs, "usr/lib/os-release"))
 	if err == nil {
 		for _, line := range strings.Split(string(usrLibOsRelease), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "ID=coreos" {
-				return DistributionCoreOS, nil
+				return "", fmt.Errorf("distribution CoreOS is no longer supported")
 			} else if line == "ID=flatcar" {
 				return DistributionFlatcar, nil
 			}
@@ -113,7 +112,7 @@ func FindDistribution(rootfs string) (Distribution, error) {
 				return DistributionContainerOS, nil
 			}
 			if strings.HasPrefix(line, "PRETTY_NAME=\"Amazon Linux 2") {
-				return DistributionCentos7, nil
+				return DistributionAmazonLinux2, nil
 			}
 		}
 		klog.Warningf("unhandled /etc/os-release info %q", string(osRelease))

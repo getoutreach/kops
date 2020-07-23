@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -69,7 +69,7 @@ func PerformAssignments(c *kops.Cluster) error {
 			}
 			c.Spec.NetworkCIDR = vpcInfo.CIDR
 			if c.Spec.NetworkCIDR == "" {
-				return fmt.Errorf("Unable to infer NetworkCIDR from VPC ID, please specify --network-cidr")
+				return fmt.Errorf("unable to infer NetworkCIDR from VPC ID, please specify --network-cidr")
 			}
 		} else {
 			if cloud.ProviderID() == kops.CloudProviderAWS {

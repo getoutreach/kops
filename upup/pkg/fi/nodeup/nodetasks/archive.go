@@ -23,8 +23,10 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"k8s.io/klog"
 	"k8s.io/kops/upup/pkg/fi"
@@ -47,6 +49,9 @@ type Archive struct {
 
 	// StripComponents is the number of components to remove when expanding the archive
 	StripComponents int `json:"stripComponents,omitempty"`
+
+	// MapFiles is the list of files to extract with corresponding directories to extract
+	MapFiles map[string]string `json:"mapFiles,omitempty"`
 }
 
 const (
@@ -61,9 +66,7 @@ func (e *Archive) GetDependencies(tasks map[string]fi.Task) []fi.Task {
 	var deps []fi.Task
 
 	// Requires parent directories to be created
-	for _, v := range findCreatesDirParents(e.TargetDir, tasks) {
-		deps = append(deps, v)
-	}
+	deps = append(deps, findCreatesDirParents(e.TargetDir, tasks)...)
 
 	return deps
 }
@@ -72,10 +75,6 @@ var _ fi.HasName = &Archive{}
 
 func (e *Archive) GetName() *string {
 	return &e.Name
-}
-
-func (e *Archive) SetName(name string) {
-	e.Name = name
 }
 
 // String returns a string representation, implementing the Stringer interface
@@ -157,20 +156,38 @@ func (_ *Archive) RenderLocal(t *local.LocalTarget, a, e, changes *Archive) erro
 			return err
 		}
 
-		targetDir := e.TargetDir
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return fmt.Errorf("error creating directories %q: %v", targetDir, err)
-		}
+		if len(e.MapFiles) == 0 {
+			targetDir := e.TargetDir
+			if err := os.MkdirAll(targetDir, 0755); err != nil {
+				return fmt.Errorf("error creating directories %q: %v", targetDir, err)
+			}
 
-		args := []string{"tar", "xf", localFile, "-C", targetDir}
-		if e.StripComponents != 0 {
-			args = append(args, "--strip-components="+strconv.Itoa(e.StripComponents))
-		}
+			args := []string{"tar", "xf", localFile, "-C", targetDir}
+			if e.StripComponents != 0 {
+				args = append(args, "--strip-components="+strconv.Itoa(e.StripComponents))
+			}
 
-		klog.Infof("running command %s", args)
-		cmd := exec.Command(args[0], args[1:]...)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("error installing archive %q: %v: %s", e.Name, err, string(output))
+			klog.Infof("running command %s", args)
+			cmd := exec.Command(args[0], args[1:]...)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("error installing archive %q: %v: %s", e.Name, err, string(output))
+			}
+		} else {
+			for src, dest := range e.MapFiles {
+				stripCount := strings.Count(src, "/")
+				targetDir := filepath.Join(e.TargetDir, dest)
+				if err := os.MkdirAll(targetDir, 0755); err != nil {
+					return fmt.Errorf("error creating directories %q: %v", targetDir, err)
+				}
+
+				args := []string{"tar", "xf", localFile, "-C", targetDir, "--wildcards", "--strip-components=" + strconv.Itoa(stripCount), src}
+
+				klog.Infof("running command %s", args)
+				cmd := exec.Command(args[0], args[1:]...)
+				if output, err := cmd.CombinedOutput(); err != nil {
+					return fmt.Errorf("error installing archive %q: %v: %s", e.Name, err, string(output))
+				}
+			}
 		}
 
 		// We write a marker file to prevent re-execution

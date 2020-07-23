@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -59,6 +59,9 @@ type Path interface {
 	// Remove deletes the file
 	Remove() error
 
+	// RemoveAllVersions completely deletes the file (with all its versions and markers).
+	RemoveAllVersions() error
+
 	// Base returns the base name (last element)
 	Base() string
 
@@ -102,16 +105,13 @@ func IsClusterReadable(p Path) bool {
 	}
 
 	switch p.(type) {
-	case *S3Path, *GSPath, *SwiftPath, *OSSPath:
+	case *S3Path, *GSPath, *SwiftPath, *OSSPath, *FSPath, *VaultPath:
 		return true
 
 	case *KubernetesPath:
 		return true
 
 	case *SSHPath:
-		return false
-
-	case *FSPath:
 		return false
 
 	case *MemFSPath:

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@ limitations under the License.
 package coredns
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 
 	etcdc "github.com/coreos/etcd/client"
 	dnsmsg "github.com/miekg/coredns/middleware/etcd/msg"
-	"golang.org/x/net/context"
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider"
 )
 
@@ -69,8 +69,12 @@ func (c *ResourceRecordChangeset) Upsert(rrset dnsprovider.ResourceRecordSet) dn
 	return c
 }
 
-func (c *ResourceRecordChangeset) Apply() error {
-	ctx := context.Background()
+func (c *ResourceRecordChangeset) Apply(ctx context.Context) error {
+	// Empty changesets should be a relatively quick no-op
+	if c.IsEmpty() {
+		return nil
+	}
+
 	etcdPathPrefix := c.zone.zones.intf.etcdPathPrefix
 	getOpts := &etcdc.GetOptions{}
 	setOpts := &etcdc.SetOptions{}
@@ -97,7 +101,7 @@ func (c *ResourceRecordChangeset) Apply() error {
 				if checkNotExists {
 					response, err := c.zone.zones.intf.etcdKeysAPI.Get(ctx, dnsmsg.Path(recordKey, etcdPathPrefix), getOpts)
 					if err == nil && response != nil {
-						return fmt.Errorf("Key already exist, key: %v", recordKey)
+						return fmt.Errorf("key already exist, key: %v", recordKey)
 					}
 				}
 

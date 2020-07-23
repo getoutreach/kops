@@ -39,12 +39,12 @@ var _ fi.ModelBuilder = &HookBuilder{}
 // Build is responsible for implementing the cluster hook
 func (h *HookBuilder) Build(c *fi.ModelBuilderContext) error {
 	// we keep a list of hooks name so we can allow local instanceGroup hooks override the cluster ones
-	hookNames := make(map[string]bool, 0)
+	hookNames := make(map[string]bool)
 	for i, spec := range []*[]kops.HookSpec{&h.InstanceGroup.Spec.Hooks, &h.Cluster.Spec.Hooks} {
 		for j, hook := range *spec {
 			isInstanceGroup := i == 0
 			// filter roles if required
-			if len(hook.Roles) > 0 && !containsRole(h.InstanceGroup.Spec.Role, hook.Roles) {
+			if len(hook.Roles) > 0 && !containsRole(h.NodeupConfig.InstanceGroupRole, hook.Roles) {
 				continue
 			}
 

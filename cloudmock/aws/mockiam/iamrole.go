@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -141,9 +141,47 @@ func (m *MockIAM) DeleteRole(request *iam.DeleteRoleInput) (*iam.DeleteRoleOutpu
 
 	return &iam.DeleteRoleOutput{}, nil
 }
+
 func (m *MockIAM) DeleteRoleWithContext(aws.Context, *iam.DeleteRoleInput, ...request.Option) (*iam.DeleteRoleOutput, error) {
 	panic("Not implemented")
 }
+
 func (m *MockIAM) DeleteRoleRequest(*iam.DeleteRoleInput) (*request.Request, *iam.DeleteRoleOutput) {
 	panic("Not implemented")
+}
+
+func (m *MockIAM) ListAttachedRolePolicies(input *iam.ListAttachedRolePoliciesInput) (*iam.ListAttachedRolePoliciesOutput, error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	klog.Infof("ListAttachedRolePolicies: %s", aws.StringValue(input.RoleName))
+
+	for _, r := range m.Roles {
+		if r.RoleName == input.RoleName {
+			role := aws.StringValue(r.RoleName)
+
+			return &iam.ListAttachedRolePoliciesOutput{
+				AttachedPolicies: m.AttachedPolicies[role],
+			}, nil
+		}
+	}
+
+	return &iam.ListAttachedRolePoliciesOutput{}, nil
+}
+
+func (m *MockIAM) ListAttachedRolePoliciesPages(input *iam.ListAttachedRolePoliciesInput, pager func(*iam.ListAttachedRolePoliciesOutput, bool) bool) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	klog.Infof("ListAttachedRolePolicies: %s", aws.StringValue(input.RoleName))
+
+	role := aws.StringValue(input.RoleName)
+
+	if pager(&iam.ListAttachedRolePoliciesOutput{
+		AttachedPolicies: m.AttachedPolicies[role],
+	}, true) {
+		return nil
+	}
+
+	return nil
 }

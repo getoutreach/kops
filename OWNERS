@@ -1,15 +1,31 @@
 # See the OWNERS docs at https://go.k8s.io/owners
 
-approvers:
-  - justinsb
+# These OWNERS files should stay in sync:
+# https://github.com/kubernetes/test-infra/blob/master/config/jobs/kubernetes/kops/OWNERS
+# https://github.com/kubernetes/test-infra/blob/master/config/testgrids/kubernetes/kops/OWNERS
+
+emeritus_approvers:
   - chrislovecnm
-  - andrewsykim
+  - chrisz100
+  - gambol99
+  - granular-ryanbonham
+approvers:
+  - hakman
+  - johngmyers
+  - justinsb
   - geojaz
   - kashifsaadat
-  - gambol99
   - mikesplain
-  - chrisz100
   - rdrgmnzs
+  - rifelpet
+  - zetaab
 reviewers:
-  - robinpercy
-  - granular-ryanbonham
+  - gjtempleton
+  - hakman
+  - johngmyers
+  - joshbranham
+  - kashifsaadat
+  - mikesplain
+  - olemarkus
+  - rdrgmnzs
+  - zetaab

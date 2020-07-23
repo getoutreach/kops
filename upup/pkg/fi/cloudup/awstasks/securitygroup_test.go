@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -131,6 +131,7 @@ func TestSecurityGroupCreate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error building context: %v", err)
 		}
+		defer context.Close()
 
 		if err := context.RunTasks(testRunTasksOptions); err != nil {
 			t.Fatalf("unexpected error during Run: %v", err)
@@ -148,7 +149,13 @@ func TestSecurityGroupCreate(t *testing.T) {
 			Description: s("Description"),
 			GroupId:     sg1.ID,
 			VpcId:       vpc1.ID,
-			GroupName:   s("sg1"),
+			Tags: []*ec2.Tag{
+				{
+					Key:   aws.String("Name"),
+					Value: aws.String("sg1"),
+				},
+			},
+			GroupName: s("sg1"),
 		}
 		actual := c.SecurityGroups[*sg1.ID]
 		if !reflect.DeepEqual(actual, expected) {

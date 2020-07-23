@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package channels
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 
@@ -66,7 +67,6 @@ func (m *AddonMenu) MergeAddons(o *AddonMenu) {
 }
 
 func (a *Addon) ChannelVersion() *ChannelVersion {
-
 	return &ChannelVersion{
 		Channel:      &a.ChannelName,
 		Version:      a.Spec.Version,
@@ -88,12 +88,12 @@ func (a *Addon) buildChannel() *Channel {
 	return channel
 }
 
-func (a *Addon) GetRequiredUpdates(k8sClient kubernetes.Interface) (*AddonUpdate, error) {
+func (a *Addon) GetRequiredUpdates(ctx context.Context, k8sClient kubernetes.Interface) (*AddonUpdate, error) {
 	newVersion := a.ChannelVersion()
 
 	channel := a.buildChannel()
 
-	existingVersion, err := channel.GetInstalledVersion(k8sClient)
+	existingVersion, err := channel.GetInstalledVersion(ctx, k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -110,15 +110,14 @@ func (a *Addon) GetRequiredUpdates(k8sClient kubernetes.Interface) (*AddonUpdate
 }
 
 func (a *Addon) GetManifestFullUrl() (*url.URL, error) {
-
 	if a.Spec.Manifest == nil || *a.Spec.Manifest == "" {
-		return nil, field.Required(field.NewPath("Spec", "Manifest"), "")
+		return nil, field.Required(field.NewPath("spec", "manifest"), "")
 	}
 
 	manifest := *a.Spec.Manifest
 	manifestURL, err := url.Parse(manifest)
 	if err != nil {
-		return nil, field.Invalid(field.NewPath("Spec", "Manifest"), manifest, "Not a valid URL")
+		return nil, field.Invalid(field.NewPath("spec", "manifest"), manifest, "Not a valid URL")
 	}
 	if !manifestURL.IsAbs() {
 		manifestURL = a.ChannelLocation.ResolveReference(manifestURL)
@@ -126,8 +125,8 @@ func (a *Addon) GetManifestFullUrl() (*url.URL, error) {
 	return manifestURL, nil
 }
 
-func (a *Addon) EnsureUpdated(k8sClient kubernetes.Interface) (*AddonUpdate, error) {
-	required, err := a.GetRequiredUpdates(k8sClient)
+func (a *Addon) EnsureUpdated(ctx context.Context, k8sClient kubernetes.Interface) (*AddonUpdate, error) {
+	required, err := a.GetRequiredUpdates(ctx, k8sClient)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +145,7 @@ func (a *Addon) EnsureUpdated(k8sClient kubernetes.Interface) (*AddonUpdate, err
 	}
 
 	channel := a.buildChannel()
-	err = channel.SetInstalledVersion(k8sClient, a.ChannelVersion())
+	err = channel.SetInstalledVersion(ctx, k8sClient, a.ChannelVersion())
 	if err != nil {
 		return nil, fmt.Errorf("error applying annotation to record addon installation: %v", err)
 	}

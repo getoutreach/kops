@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -246,6 +246,7 @@ func buildCloudInstanceGroup(c ALICloud, ig *kops.InstanceGroup, g ess.ScalingGr
 		HumanName:     g.ScalingGroupName,
 		InstanceGroup: ig,
 		MinSize:       g.MinSize,
+		TargetSize:    g.MinSize, // TODO: Which is the appropriate field? Need to add DesiredCapacity field to ScalingGroupItemType?
 		MaxSize:       g.MaxSize,
 		Raw:           g,
 	}

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path"
 	"reflect"
 	"sort"
@@ -106,6 +107,8 @@ func TestLifecyclePrivateSharedSubnet(t *testing.T) {
 }
 
 func runLifecycleTest(h *testutils.IntegrationTestHarness, o *LifecycleTestOptions, cloud *awsup.MockAWSCloud) {
+	ctx := context.Background()
+
 	t := o.t
 
 	t.Logf("running lifecycle test for cluster %s", o.ClusterName)
@@ -125,7 +128,7 @@ func runLifecycleTest(h *testutils.IntegrationTestHarness, o *LifecycleTestOptio
 		options := &CreateOptions{}
 		options.Filenames = []string{path.Join(o.SrcDir, inputYAML)}
 
-		err := RunCreate(factory, &stdout, options)
+		err := RunCreate(ctx, factory, &stdout, options)
 		if err != nil {
 			t.Fatalf("error running %q create: %v", inputYAML, err)
 		}
@@ -137,7 +140,7 @@ func runLifecycleTest(h *testutils.IntegrationTestHarness, o *LifecycleTestOptio
 		options.Name = "admin"
 		options.PublicKeyPath = path.Join(o.SrcDir, "id_rsa.pub")
 
-		err := RunCreateSecretPublicKey(factory, &stdout, options)
+		err := RunCreateSecretPublicKey(ctx, factory, &stdout, options)
 		if err != nil {
 			t.Fatalf("error running %q create: %v", inputYAML, err)
 		}
@@ -152,7 +155,7 @@ func runLifecycleTest(h *testutils.IntegrationTestHarness, o *LifecycleTestOptio
 		// We don't test it here, and it adds a dependency on kubectl
 		options.CreateKubecfg = false
 
-		_, err := RunUpdateCluster(factory, o.ClusterName, &stdout, options)
+		_, err := RunUpdateCluster(ctx, factory, o.ClusterName, &stdout, options)
 		if err != nil {
 			t.Fatalf("error running update cluster %q: %v", o.ClusterName, err)
 		}
@@ -167,7 +170,7 @@ func runLifecycleTest(h *testutils.IntegrationTestHarness, o *LifecycleTestOptio
 		// We don't test it here, and it adds a dependency on kubectl
 		options.CreateKubecfg = false
 
-		results, err := RunUpdateCluster(factory, o.ClusterName, &stdout, options)
+		results, err := RunUpdateCluster(ctx, factory, o.ClusterName, &stdout, options)
 		if err != nil {
 			t.Fatalf("error running update cluster %q: %v", o.ClusterName, err)
 		}
@@ -246,7 +249,7 @@ func runLifecycleTest(h *testutils.IntegrationTestHarness, o *LifecycleTestOptio
 		options := &DeleteClusterOptions{}
 		options.Yes = true
 		options.ClusterName = o.ClusterName
-		if err := RunDeleteCluster(factory, &stdout, options); err != nil {
+		if err := RunDeleteCluster(ctx, factory, &stdout, options); err != nil {
 			t.Fatalf("error running delete cluster %q: %v", o.ClusterName, err)
 		}
 	}
@@ -269,7 +272,7 @@ func runLifecycleTestAWS(o *LifecycleTestOptions) {
 	h := testutils.NewIntegrationTestHarness(o.t)
 	defer h.Close()
 
-	h.MockKopsVersion("1.8.1")
+	h.MockKopsVersion("1.19.0-alpha.1")
 	cloud := h.SetupMockAWS()
 
 	var beforeIds []string

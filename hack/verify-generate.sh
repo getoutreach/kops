@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2016 The Kubernetes Authors.
+
+# Copyright 2019 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +18,8 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-KOPS_ROOT=$(git rev-parse --show-toplevel)
+. "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
 cd "${KOPS_ROOT}"
 
 make crds
@@ -26,7 +28,7 @@ changed_files=$(git status --porcelain || true)
 if [ -n "${changed_files}" ]; then
    echo "Detected that generation is needed; run 'make crds'"
    echo "changed files:"
-   printf "${changed_files}\n"
+   printf "%s" "${changed_files}\n"
    echo "git diff:"
    git --no-pager diff
    echo "To fix: run 'make crds'"

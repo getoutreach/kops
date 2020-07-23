@@ -204,16 +204,27 @@ spec:
         image: "{{- .ExternalCloudControllerManager.Image }}"
         args:
           - /bin/openstack-cloud-controller-manager
-          - --v={{ .ExternalCloudControllerManager.LogLevel }}
+{{- range $arg := CloudControllerConfigArgv }}
+          - {{ $arg }}
+{{- end }}
           - --cloud-config=/etc/kubernetes/cloud.config
-          - --cloud-provider=openstack
-          - --use-service-account-credentials=true
           - --address=127.0.0.1
         volumeMounts:
         - mountPath: /etc/kubernetes/cloud.config
           name: cloudconfig
           readOnly: true
+{{ if .UseHostCertificates }}
+        - mountPath: /etc/ssl/certs
+          name: etc-ssl-certs
+          readOnly: true
+{{ end }}
       volumes:
       - hostPath:
           path: /etc/kubernetes/cloud.config
         name: cloudconfig
+{{ if .UseHostCertificates }}
+      - hostPath:
+          path: /etc/ssl/certs
+          type: DirectoryOrCreate
+        name: etc-ssl-certs
+{{ end }}

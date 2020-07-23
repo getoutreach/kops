@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -60,32 +60,30 @@ func (p *SSHPath) newClient() (*sftp.Client, error) {
 		}
 
 		return sftpClient, nil
-	} else {
-		s, err := p.client.NewSession()
-		if err != nil {
-			return nil, fmt.Errorf("error creating sftp client (in new-session): %v", err)
-		}
-
-		//if err := s.R("sftp"); err != nil {
-		//	return nil, fmt.Errorf("error creating sftp client (in new-session): %v", err)
-		//}
-		stdin, err := s.StdinPipe()
-		if err != nil {
-			return nil, fmt.Errorf("error creating sftp client (at stdin pipe): %v", err)
-		}
-		stdout, err := s.StdoutPipe()
-		if err != nil {
-			return nil, fmt.Errorf("error creating sftp client (at stdout pipe): %v", err)
-		}
-
-		err = s.Start("sudo /usr/lib/openssh/sftp-server")
-		if err != nil {
-			return nil, fmt.Errorf("error creating sftp client (executing 'sudo /usr/lib/openssh/sftp-server'): %v", err)
-		}
-
-		return sftp.NewClientPipe(stdout, stdin)
+	}
+	s, err := p.client.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("error creating sftp client (in new-session): %v", err)
 	}
 
+	//if err := s.R("sftp"); err != nil {
+	//	return nil, fmt.Errorf("error creating sftp client (in new-session): %v", err)
+	//}
+	stdin, err := s.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("error creating sftp client (at stdin pipe): %v", err)
+	}
+	stdout, err := s.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("error creating sftp client (at stdout pipe): %v", err)
+	}
+
+	err = s.Start("sudo /usr/lib/openssh/sftp-server")
+	if err != nil {
+		return nil, fmt.Errorf("error creating sftp client (executing 'sudo /usr/lib/openssh/sftp-server'): %v", err)
+	}
+
+	return sftp.NewClientPipe(stdout, stdin)
 }
 func (p *SSHPath) Path() string {
 	return "ssh://" + p.server + p.path
@@ -111,6 +109,10 @@ func (p *SSHPath) Remove() error {
 	}
 
 	return nil
+}
+
+func (p *SSHPath) RemoveAllVersions() error {
+	return p.Remove()
 }
 
 func (p *SSHPath) Join(relativePath ...string) Path {
@@ -177,11 +179,11 @@ func (p *SSHPath) WriteFile(data io.ReadSeeker, acl ACL) error {
 
 	if err == nil {
 		if acl != nil {
-			sshAcl, ok := acl.(*SSHAcl)
+			sshACL, ok := acl.(*SSHAcl)
 			if !ok {
 				err = fmt.Errorf("unexpected acl type %T", acl)
 			} else {
-				err = sftpClient.Chmod(tempfile, sshAcl.Mode)
+				err = sftpClient.Chmod(tempfile, sshACL.Mode)
 				if err != nil {
 					err = fmt.Errorf("error during chmod of %q: %v", tempfile, err)
 				}
@@ -190,7 +192,8 @@ func (p *SSHPath) WriteFile(data io.ReadSeeker, acl ACL) error {
 	}
 
 	if err == nil {
-		session, err := p.client.NewSession()
+		var session *ssh.Session
+		session, err = p.client.NewSession()
 		if err != nil {
 			err = fmt.Errorf("error creating session for rename: %v", err)
 		} else {

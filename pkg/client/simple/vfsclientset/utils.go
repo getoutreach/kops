@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@ limitations under the License.
 package vfsclientset
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"k8s.io/kops/util/pkg/vfs"
 )
 
-func listChildNames(vfsPath vfs.Path) ([]string, error) {
+func listChildNames(ctx context.Context, vfsPath vfs.Path) ([]string, error) {
 	children, err := vfsPath.ReadDir()
 	if err != nil {
 		if os.IsNotExist(err) {

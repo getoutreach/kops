@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ func (call ManagedZonesCreateCall) Do(opts ...googleapi.CallOption) (interfaces.
 		return nil, *call.Error
 	}
 	if call.Service.Impl[call.Project][call.ManagedZone.DnsName()] != nil {
-		return nil, fmt.Errorf("Error - attempt to create duplicate zone %s in project %s.",
+		return nil, fmt.Errorf("error - attempt to create duplicate zone %s in project %s",
 			call.ManagedZone.DnsName(), call.Project)
 	}
 	if call.Service.Impl == nil {

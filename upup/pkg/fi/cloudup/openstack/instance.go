@@ -32,6 +32,9 @@ import (
 const (
 	INSTANCE_GROUP_GENERATION = "ig_generation"
 	CLUSTER_GENERATION        = "cluster_generation"
+	OS_ANNOTATION             = "openstack.kops.io/"
+	BOOT_FROM_VOLUME          = "osVolumeBoot"
+	BOOT_VOLUME_SIZE          = "osVolumeSize"
 )
 
 // floatingBackoff is the backoff strategy for listing openstack floatingips
@@ -39,7 +42,7 @@ var floatingBackoff = wait.Backoff{
 	Duration: time.Second,
 	Factor:   1.5,
 	Jitter:   0.1,
-	Steps:    10,
+	Steps:    20,
 }
 
 func (c *openstackCloud) CreateInstance(opt servers.CreateOptsBuilder) (*servers.Server, error) {
@@ -67,7 +70,7 @@ func (c *openstackCloud) ListServerFloatingIPs(instanceID string) ([]*string, er
 	_, err := vfs.RetryWithBackoff(floatingBackoff, func() (bool, error) {
 		server, err := c.GetInstance(instanceID)
 		if err != nil {
-			return true, fmt.Errorf("Failed to find server with id (\"%s\"): %v", instanceID, err)
+			return true, fmt.Errorf("failed to find server with id (\"%s\"): %v", instanceID, err)
 		}
 
 		var addresses map[string][]Address
@@ -78,7 +81,11 @@ func (c *openstackCloud) ListServerFloatingIPs(instanceID string) ([]*string, er
 
 		for _, addrList := range addresses {
 			for _, props := range addrList {
-				if props.IPType == "floating" {
+				if c.floatingEnabled {
+					if props.IPType == "floating" {
+						result = append(result, fi.String(props.Addr))
+					}
+				} else {
 					result = append(result, fi.String(props.Addr))
 				}
 			}
@@ -89,7 +96,7 @@ func (c *openstackCloud) ListServerFloatingIPs(instanceID string) ([]*string, er
 		return false, nil
 	})
 	if len(result) == 0 || err != nil {
-		return result, fmt.Errorf("Could not find floating ip associated to server (\"%s\") %v", instanceID, err)
+		return result, fmt.Errorf("could not find floating ip associated to server (\"%s\") %v", instanceID, err)
 	}
 	return result, nil
 }
@@ -101,6 +108,12 @@ func (c *openstackCloud) DeleteInstance(i *cloudinstances.CloudInstanceGroupMemb
 
 func (c *openstackCloud) DeleteInstanceWithID(instanceID string) error {
 	return servers.Delete(c.novaClient, instanceID).ExtractErr()
+}
+
+// DetachInstance is not implemented yet. It needs to cause a cloud instance to no longer be counted against the group's size limits.
+func (c *openstackCloud) DetachInstance(i *cloudinstances.CloudInstanceGroupMember) error {
+	klog.V(8).Info("openstack cloud provider DetachInstance not implemented yet")
+	return fmt.Errorf("openstack cloud provider does not support surging")
 }
 
 func (c *openstackCloud) GetInstance(id string) (*servers.Server, error) {

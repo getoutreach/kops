@@ -59,21 +59,28 @@ metadata:
       addonmanager.kubernetes.io/mode: EnsureExists
 data:
   Corefile: |
+  {{- if KubeDNS.ExternalCoreFile }}
+{{ KubeDNS.ExternalCoreFile | indent 4 }}
+  {{- else }}
     .:53 {
         errors
-        health
+        health {
+          lameduck 5s
+        }
         kubernetes {{ KubeDNS.Domain }}. in-addr.arpa ip6.arpa {
           pods insecure
-          upstream
           fallthrough in-addr.arpa ip6.arpa
         }
         prometheus :9153
-        forward . /etc/resolv.conf
+        forward . /etc/resolv.conf {
+          max_concurrent 1000
+        }
         loop
         cache 30
         loadbalance
         reload
     }
+  {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -107,7 +114,7 @@ spec:
           beta.kubernetes.io/os: linux
       containers:
       - name: coredns
-        image: k8s.gcr.io/coredns:1.3.1
+        image: {{ if KubeDNS.CoreDNSImage }}{{ KubeDNS.CoreDNSImage }}{{ else }}k8s.gcr.io/coredns:1.7.0{{ end }}
         imagePullPolicy: IfNotPresent
         resources:
           limits:

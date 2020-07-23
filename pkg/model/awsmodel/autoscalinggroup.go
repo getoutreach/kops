@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,9 +20,12 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/klog"
 	"k8s.io/kops/pkg/apis/kops"
+	"k8s.io/kops/pkg/featureflag"
 	"k8s.io/kops/pkg/model"
 	"k8s.io/kops/pkg/model/defaults"
+	"k8s.io/kops/pkg/model/spotinstmodel"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awstasks"
 
@@ -34,15 +37,17 @@ const (
 	DefaultVolumeType = ec2.VolumeTypeGp2
 	// DefaultVolumeIops is the default volume iops
 	DefaultVolumeIops = 100
+	// DefaultVolumeDeleteOnTermination is the default volume behavior after instance termination
+	DefaultVolumeDeleteOnTermination = true
 )
 
 // AutoscalingGroupModelBuilder configures AutoscalingGroup objects
 type AutoscalingGroupModelBuilder struct {
 	*AWSModelContext
 
-	BootstrapScript   *model.BootstrapScript
-	Lifecycle         *fi.Lifecycle
-	SecurityLifecycle *fi.Lifecycle
+	BootstrapScriptBuilder *model.BootstrapScriptBuilder
+	Lifecycle              *fi.Lifecycle
+	SecurityLifecycle      *fi.Lifecycle
 }
 
 var _ fi.ModelBuilder = &AutoscalingGroupModelBuilder{}
@@ -52,7 +57,14 @@ func (b *AutoscalingGroupModelBuilder) Build(c *fi.ModelBuilderContext) error {
 	for _, ig := range b.InstanceGroups {
 		name := b.AutoscalingGroupName(ig)
 
-		// @check if his instancegroup is backed by a fleet and overide with a launch template
+		if featureflag.SpotinstHybrid.Enabled() {
+			if spotinstmodel.HybridInstanceGroup(ig) {
+				klog.V(2).Infof("Skipping instance group: %q", name)
+				continue
+			}
+		}
+
+		// @check if his instancegroup is backed by a fleet and override with a launch template
 		task, err := func() (fi.Task, error) {
 			switch UseLaunchTemplate(ig) {
 			case true:
@@ -95,6 +107,11 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchTemplateTask(c *fi.ModelBuilde
 		return nil, err
 	}
 
+	tags, err := b.CloudTagsForInstanceGroup(ig)
+	if err != nil {
+		return nil, fmt.Errorf("error building cloud tags: %v", err)
+	}
+
 	// @TODO check if there any a better way of doing this .. initially I had a type LaunchTemplate which included
 	// LaunchConfiguration as an anonymous field, bit given up the task dependency walker works this caused issues, due
 	// to the creation of a implicit dependency
@@ -113,6 +130,7 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchTemplateTask(c *fi.ModelBuilde
 		RootVolumeType:         lc.RootVolumeType,
 		SSHKey:                 lc.SSHKey,
 		SecurityGroups:         lc.SecurityGroups,
+		Tags:                   tags,
 		Tenancy:                lc.Tenancy,
 		UserData:               lc.UserData,
 	}
@@ -122,6 +140,12 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchTemplateTask(c *fi.ModelBuilde
 	//   when you configure an Auto Scaling group with a mixed instances policy.
 	if ig.Spec.MixedInstancesPolicy == nil {
 		lt.SpotPrice = lc.SpotPrice
+	}
+	if ig.Spec.SpotDurationInMinutes != nil {
+		lt.SpotDurationInMinutes = ig.Spec.SpotDurationInMinutes
+	}
+	if ig.Spec.InstanceInterruptionBehavior != nil {
+		lt.InstanceInterruptionBehavior = ig.Spec.InstanceInterruptionBehavior
 	}
 	return lt, nil
 }
@@ -142,6 +166,11 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchConfigurationTask(c *fi.ModelB
 		volumeType = DefaultVolumeType
 	}
 
+	rootVolumeDeleteOnTermination := DefaultVolumeDeleteOnTermination
+	if ig.Spec.RootVolumeDeleteOnTermination != nil {
+		rootVolumeDeleteOnTermination = fi.BoolValue(ig.Spec.RootVolumeDeleteOnTermination)
+	}
+
 	// @step: if required we add the override for the security group for this instancegroup
 	sgLink := b.LinkToSecurityGroup(ig.Spec.Role)
 	if ig.Spec.SecurityGroupOverride != nil {
@@ -160,16 +189,17 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchConfigurationTask(c *fi.ModelB
 	}
 
 	t := &awstasks.LaunchConfiguration{
-		Name:                   fi.String(name),
-		Lifecycle:              b.Lifecycle,
-		IAMInstanceProfile:     link,
-		ImageID:                fi.String(ig.Spec.Image),
-		InstanceMonitoring:     ig.Spec.DetailedInstanceMonitoring,
-		InstanceType:           fi.String(strings.Split(ig.Spec.MachineType, ",")[0]),
-		RootVolumeOptimization: ig.Spec.RootVolumeOptimization,
-		RootVolumeSize:         fi.Int64(int64(volumeSize)),
-		RootVolumeType:         fi.String(volumeType),
-		SecurityGroups:         []*awstasks.SecurityGroup{sgLink},
+		Name:                          fi.String(name),
+		Lifecycle:                     b.Lifecycle,
+		IAMInstanceProfile:            link,
+		ImageID:                       fi.String(ig.Spec.Image),
+		InstanceMonitoring:            ig.Spec.DetailedInstanceMonitoring,
+		InstanceType:                  fi.String(strings.Split(ig.Spec.MachineType, ",")[0]),
+		RootVolumeDeleteOnTermination: fi.Bool(rootVolumeDeleteOnTermination),
+		RootVolumeOptimization:        ig.Spec.RootVolumeOptimization,
+		RootVolumeSize:                fi.Int64(int64(volumeSize)),
+		RootVolumeType:                fi.String(volumeType),
+		SecurityGroups:                []*awstasks.SecurityGroup{sgLink},
 	}
 
 	if volumeType == ec2.VolumeTypeIo1 {
@@ -210,9 +240,13 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchConfigurationTask(c *fi.ModelB
 		} else {
 			x.Iops = nil
 		}
+		deleteOnTermination := DefaultVolumeDeleteOnTermination
+		if x.DeleteOnTermination != nil {
+			deleteOnTermination = fi.BoolValue(x.DeleteOnTermination)
+		}
 		t.BlockDeviceMappings = append(t.BlockDeviceMappings, &awstasks.BlockDeviceMapping{
 			DeviceName:             fi.String(x.Device),
-			EbsDeleteOnTermination: fi.Bool(true),
+			EbsDeleteOnTermination: fi.Bool(deleteOnTermination),
 			EbsEncrypted:           x.Encrypted,
 			EbsVolumeIops:          x.Iops,
 			EbsVolumeSize:          fi.Int64(x.Size),
@@ -220,13 +254,14 @@ func (b *AutoscalingGroupModelBuilder) buildLaunchConfigurationTask(c *fi.ModelB
 		})
 	}
 
-	// @step: attach the ssh key to the instancegroup
-	if t.SSHKey, err = b.LinkToSSHKey(); err != nil {
-		return nil, err
+	if b.AWSModelContext.UseSSHKey() {
+		if t.SSHKey, err = b.LinkToSSHKey(); err != nil {
+			return nil, err
+		}
 	}
 
 	// @step: add the instancegroup userdata
-	if t.UserData, err = b.BootstrapScript.ResourceNodeUp(ig, b.Cluster); err != nil {
+	if t.UserData, err = b.BootstrapScriptBuilder.ResourceNodeUp(c, ig); err != nil {
 		return nil, err
 	}
 
@@ -310,9 +345,7 @@ func (b *AutoscalingGroupModelBuilder) buildAutoScalingGroupTask(c *fi.ModelBuil
 	t.Tags = tags
 
 	processes := []string{}
-	for _, p := range ig.Spec.SuspendProcesses {
-		processes = append(processes, p)
-	}
+	processes = append(processes, ig.Spec.SuspendProcesses...)
 	t.SuspendProcesses = &processes
 
 	t.InstanceProtection = ig.Spec.InstanceProtection

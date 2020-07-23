@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -88,6 +88,10 @@ func (c *MockAWSCloud) DeleteGroup(g *cloudinstances.CloudInstanceGroup) error {
 
 func (c *MockAWSCloud) DeleteInstance(i *cloudinstances.CloudInstanceGroupMember) error {
 	return deleteInstance(c, i)
+}
+
+func (c *MockAWSCloud) DetachInstance(i *cloudinstances.CloudInstanceGroupMember) error {
+	return detachInstance(c, i)
 }
 
 func (c *MockAWSCloud) GetCloudGroups(cluster *kops.Cluster, instancegroups []*kops.InstanceGroup, warnUnmatched bool, nodes []v1.Node) (map[string]*cloudinstances.CloudInstanceGroup, error) {
@@ -265,4 +269,34 @@ func (c *MockAWSCloud) DefaultInstanceType(cluster *kops.Cluster, ig *kops.Insta
 	default:
 		return "", fmt.Errorf("MockAWSCloud DefaultInstanceType does not handle %s", ig.Spec.Role)
 	}
+}
+
+// DescribeInstanceType calls ec2.DescribeInstanceType to get information for a particular instance type
+func (c *MockAWSCloud) DescribeInstanceType(instanceType string) (*ec2.InstanceTypeInfo, error) {
+	if instanceType == "t2.invalidType" {
+		return nil, fmt.Errorf("invalid instance type specified: t2.invalidType")
+	}
+	info := &ec2.InstanceTypeInfo{
+		NetworkInfo: &ec2.NetworkInfo{
+			MaximumNetworkInterfaces:  aws.Int64(1),
+			Ipv4AddressesPerInterface: aws.Int64(1),
+		},
+		MemoryInfo: &ec2.MemoryInfo{
+			SizeInMiB: aws.Int64(1024),
+		},
+		VCpuInfo: &ec2.VCpuInfo{
+			DefaultVCpus: aws.Int64(2),
+		},
+	}
+	if instanceType == "m3.medium" {
+		info.InstanceStorageInfo = &ec2.InstanceStorageInfo{
+			Disks: []*ec2.DiskInfo{
+				{
+					Count:    aws.Int64(1),
+					SizeInGB: aws.Int64(1024),
+				},
+			},
+		}
+	}
+	return info, nil
 }

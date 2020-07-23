@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,8 +17,6 @@ limitations under the License.
 package aws
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -63,6 +61,7 @@ func ListResourcesAWS(cloud awsup.AWSCloud, clusterName string) (map[string]*res
 		//ListCloudFormationStacks,
 
 		// EC2
+		ListAutoScalingGroups,
 		ListInstances,
 		ListKeypairs,
 		ListSecurityGroups,
@@ -83,14 +82,12 @@ func ListResourcesAWS(cloud awsup.AWSCloud, clusterName string) (map[string]*res
 		// IAM
 		ListIAMInstanceProfiles,
 		ListIAMRoles,
+		ListIAMOIDCProviders,
 	}
 
 	if featureflag.Spotinst.Enabled() {
 		// Spotinst resources
 		listFunctions = append(listFunctions, ListSpotinstResources)
-	} else {
-		// AutoScaling Groups
-		listFunctions = append(listFunctions, ListAutoScalingGroups)
 	}
 
 	for _, fn := range listFunctions {
@@ -230,7 +227,7 @@ func addUntaggedRouteTables(cloud awsup.AWSCloud, clusterName string, resources 
 
 		isMain := false
 		for _, a := range rt.Associations {
-			if aws.BoolValue(a.Main) == true {
+			if aws.BoolValue(a.Main) {
 				isMain = true
 			}
 		}
@@ -258,9 +255,7 @@ func FindAutoscalingLaunchConfiguration(cloud awsup.AWSCloud, name string) (*aut
 		LaunchConfigurationNames: []*string{&name},
 	}
 	err := cloud.Autoscaling().DescribeLaunchConfigurationsPages(request, func(p *autoscaling.DescribeLaunchConfigurationsOutput, lastPage bool) bool {
-		for _, t := range p.LaunchConfigurations {
-			results = append(results, t)
-		}
+		results = append(results, p.LaunchConfigurations...)
 		return true
 	})
 	if err != nil {
@@ -271,7 +266,7 @@ func FindAutoscalingLaunchConfiguration(cloud awsup.AWSCloud, name string) (*aut
 		return nil, nil
 	}
 	if len(results) != 1 {
-		return nil, fmt.Errorf("Found multiple LaunchConfigurations with name %q", name)
+		return nil, fmt.Errorf("found multiple LaunchConfigurations with name %q", name)
 	}
 	return results[0], nil
 }
@@ -366,7 +361,7 @@ func ListCloudFormationStacks(cloud fi.Cloud, clusterName string) ([]*resources.
 	c := cloud.(awsup.AWSCloud)
 	response, err := c.CloudFormation().ListStacks(request)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to list CloudFormation stacks: %v", err)
+		return nil, fmt.Errorf("unable to list CloudFormation stacks: %v", err)
 	}
 	for _, stack := range response.StackSummaries {
 		if *stack.StackName == clusterName {
@@ -506,16 +501,16 @@ func (s *dumpState) getImageInfo(imageID string) (*imageInfo, error) {
 func guessSSHUser(image *ec2.Image) string {
 	owner := aws.StringValue(image.OwnerId)
 	switch owner {
-	case awsup.WellKnownAccountAmazonSystemLinux2:
+	case awsup.WellKnownAccountAmazonLinux2, awsup.WellKnownAccountRedhat:
 		return "ec2-user"
-	case awsup.WellKnownAccountRedhat:
-		return "ec2-user"
-	case awsup.WellKnownAccountCoreOS:
-		return "core"
-	case awsup.WellKnownAccountKopeio:
+	case awsup.WellKnownAccountCentOS:
+		return "centos"
+	case awsup.WellKnownAccountDebian9, awsup.WellKnownAccountDebian10, awsup.WellKnownAccountKopeio:
 		return "admin"
 	case awsup.WellKnownAccountUbuntu:
 		return "ubuntu"
+	case awsup.WellKnownAccountCoreOS, awsup.WellKnownAccountFlatcar:
+		return "core"
 	}
 
 	name := aws.StringValue(image.Name)
@@ -610,6 +605,7 @@ func ListVolumes(cloud fi.Cloud, clusterName string) ([]*resources.Resource, err
 			ID:      id,
 			Type:    "volume",
 			Deleter: DeleteVolume,
+			Shared:  HasSharedTag(ec2.ResourceTypeVolume+":"+id, volume.Tags, clusterName),
 		}
 
 		var blocks []string
@@ -665,9 +661,7 @@ func DescribeVolumes(cloud fi.Cloud) ([]*ec2.Volume, error) {
 	}
 
 	err := c.EC2().DescribeVolumesPages(request, func(p *ec2.DescribeVolumesOutput, lastPage bool) bool {
-		for _, volume := range p.Volumes {
-			volumes = append(volumes, volume)
-		}
+		volumes = append(volumes, p.Volumes...)
 		return true
 	})
 	if err != nil {
@@ -1096,9 +1090,7 @@ func DescribeInternetGateways(cloud fi.Cloud) ([]*ec2.InternetGateway, error) {
 	}
 
 	var gateways []*ec2.InternetGateway
-	for _, o := range response.InternetGateways {
-		gateways = append(gateways, o)
-	}
+	gateways = append(gateways, response.InternetGateways...)
 
 	return gateways, nil
 }
@@ -1118,9 +1110,7 @@ func DescribeInternetGatewaysIgnoreTags(cloud fi.Cloud) ([]*ec2.InternetGateway,
 
 	var gateways []*ec2.InternetGateway
 
-	for _, igw := range response.InternetGateways {
-		gateways = append(gateways, igw)
-	}
+	gateways = append(gateways, response.InternetGateways...)
 
 	return gateways, nil
 }
@@ -1213,7 +1203,12 @@ func FindAutoScalingLaunchTemplateConfigurations(cloud fi.Cloud, securityGroups 
 		}
 		for _, j := range req.LaunchTemplateVersions {
 			// @check if the security group references the security group above
-			for _, y := range j.LaunchTemplateData.SecurityGroupIds {
+			var s []*string
+			for _, ni := range j.LaunchTemplateData.NetworkInterfaces {
+				s = append(s, ni.Groups...)
+			}
+			s = append(s, j.LaunchTemplateData.SecurityGroupIds...)
+			for _, y := range s {
 				if securityGroups.Has(fi.StringValue(y)) {
 					list = append(list, &resources.Resource{
 						Name:    aws.StringValue(x.LaunchTemplateName),
@@ -1321,13 +1316,16 @@ func FindNatGateways(cloud fi.Cloud, routeTables map[string]*resources.Resource,
 	}
 
 	var resourceTrackers []*resources.Resource
-	if len(natGatewayIds) != 0 {
-		request := &ec2.DescribeNatGatewaysInput{}
-		for natGatewayId := range natGatewayIds {
-			request.NatGatewayIds = append(request.NatGatewayIds, aws.String(natGatewayId))
+	for natGatewayId := range natGatewayIds {
+		request := &ec2.DescribeNatGatewaysInput{
+			NatGatewayIds: []*string{aws.String(natGatewayId)},
 		}
 		response, err := c.EC2().DescribeNatGateways(request)
 		if err != nil {
+			if awsup.AWSErrorCode(err) == "NatGatewayNotFound" {
+				klog.V(2).Infof("Got NatGatewayNotFound describing NatGateway %s; will treat as already-deleted", natGatewayId)
+				continue
+			}
 			return nil, fmt.Errorf("error from DescribeNatGateways: %v", err)
 		}
 
@@ -1339,7 +1337,13 @@ func FindNatGateways(cloud fi.Cloud, routeTables map[string]*resources.Resource,
 			natGatewayId := aws.StringValue(ngw.NatGatewayId)
 
 			forceShared := !ownedNatGatewayIds.Has(natGatewayId)
-			resourceTrackers = append(resourceTrackers, buildNatGatewayResource(ngw, forceShared, clusterName))
+			ngwResource := buildNatGatewayResource(ngw, forceShared, clusterName)
+			resourceTrackers = append(resourceTrackers, ngwResource)
+
+			// Don't try to remove ElasticIPs if NatGateway is shared
+			if ngwResource.Shared {
+				continue
+			}
 
 			// If we're deleting the NatGateway, we should delete the ElasticIP also
 			for _, address := range ngw.NatGatewayAddresses {
@@ -1361,54 +1365,6 @@ func FindNatGateways(cloud fi.Cloud, routeTables map[string]*resources.Resource,
 	}
 
 	return resourceTrackers, nil
-}
-
-// extractClusterName performs string-matching / parsing to determine the ClusterName in some instance-data
-// It returns "" if it could not be (uniquely) determined
-func extractClusterName(userData string) string {
-	clusterName := ""
-
-	scanner := bufio.NewScanner(bytes.NewReader([]byte(userData)))
-	scanner.Split(bufio.ScanLines)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		line = strings.TrimSpace(line)
-
-		if strings.HasPrefix(line, "INSTANCE_PREFIX:") {
-			// kube-up
-			// Match:
-			// INSTANCE_PREFIX: 'clustername'
-			// INSTANCE_PREFIX: "clustername"
-			// INSTANCE_PREFIX: clustername
-			line = strings.TrimPrefix(line, "INSTANCE_PREFIX:")
-		} else if strings.HasPrefix(line, "ClusterName:") {
-			// kops
-			// Match:
-			// ClusterName: 'clustername'
-			// ClusterName: "clustername"
-			// ClusterName: clustername
-			line = strings.TrimPrefix(line, "ClusterName:")
-		} else {
-			continue
-		}
-
-		line = strings.TrimSpace(line)
-		line = strings.Trim(line, "'\"")
-		if clusterName != "" && clusterName != line {
-			klog.Warningf("cannot uniquely determine cluster-name, found %q and %q", line, clusterName)
-			return ""
-		}
-		clusterName = line
-
-	}
-	if err := scanner.Err(); err != nil {
-		klog.Warningf("error scanning UserData: %v", err)
-		return ""
-	}
-
-	return clusterName
-
 }
 
 // DeleteAutoScalingGroupLaunchTemplate deletes
@@ -1940,11 +1896,13 @@ func ListRoute53Records(cloud fi.Cloud, clusterName string) ([]*resources.Resour
 }
 
 func DeleteIAMRole(cloud fi.Cloud, r *resources.Resource) error {
-	c := cloud.(awsup.AWSCloud)
+	var attachedPolicies []*iam.AttachedPolicy
+	var policyNames []string
 
+	c := cloud.(awsup.AWSCloud)
 	roleName := r.Name
 
-	var policyNames []string
+	// List Inline policies
 	{
 		request := &iam.ListRolePoliciesInput{
 			RoleName: aws.String(roleName),
@@ -1965,6 +1923,26 @@ func DeleteIAMRole(cloud fi.Cloud, r *resources.Resource) error {
 		}
 	}
 
+	// List Attached Policies
+	{
+		request := &iam.ListAttachedRolePoliciesInput{
+			RoleName: aws.String(roleName),
+		}
+		err := c.IAM().ListAttachedRolePoliciesPages(request, func(page *iam.ListAttachedRolePoliciesOutput, lastPage bool) bool {
+			attachedPolicies = append(attachedPolicies, page.AttachedPolicies...)
+			return true
+		})
+		if err != nil {
+			if awsup.AWSErrorCode(err) == "NoSuchEntity" {
+				klog.V(2).Infof("Got NoSuchEntity describing IAM RolePolicy %q; will treat as already-detached", roleName)
+				return nil
+			}
+
+			return fmt.Errorf("error listing IAM role policies for %q: %v", roleName, err)
+		}
+	}
+
+	// Delete inline policies
 	for _, policyName := range policyNames {
 		klog.V(2).Infof("Deleting IAM role policy %q %q", roleName, policyName)
 		request := &iam.DeleteRolePolicyInput{
@@ -1977,6 +1955,20 @@ func DeleteIAMRole(cloud fi.Cloud, r *resources.Resource) error {
 		}
 	}
 
+	// Detach Managed Policies
+	for _, policy := range attachedPolicies {
+		klog.V(2).Infof("Deleting IAM role policy %q %q", roleName, policy)
+		request := &iam.DetachRolePolicyInput{
+			RoleName:  aws.String(r.Name),
+			PolicyArn: policy.PolicyArn,
+		}
+		_, err := c.IAM().DetachRolePolicy(request)
+		if err != nil {
+			return fmt.Errorf("error detaching IAM role policy %q %q: %v", roleName, *policy.PolicyArn, err)
+		}
+	}
+
+	// Delete Role
 	{
 		klog.V(2).Infof("Deleting IAM role %q", r.Name)
 		request := &iam.DeleteRoleInput{
@@ -2109,6 +2101,73 @@ func ListIAMInstanceProfiles(cloud fi.Cloud, clusterName string) ([]*resources.R
 	}
 
 	return resourceTrackers, nil
+}
+
+func ListIAMOIDCProviders(cloud fi.Cloud, clusterName string) ([]*resources.Resource, error) {
+	c := cloud.(awsup.AWSCloud)
+
+	var providers []*string
+	{
+		request := &iam.ListOpenIDConnectProvidersInput{}
+		response, err := c.IAM().ListOpenIDConnectProviders(request)
+		if err != nil {
+			return nil, fmt.Errorf("error listing IAM OIDC Providers: %v", err)
+		}
+		for _, provider := range response.OpenIDConnectProviderList {
+			arn := provider.Arn
+			descReq := &iam.GetOpenIDConnectProviderInput{
+				OpenIDConnectProviderArn: arn,
+			}
+			_, err := c.IAM().GetOpenIDConnectProvider(descReq)
+			if err != nil {
+				return nil, fmt.Errorf("error getting IAM OIDC Provider: %v", err)
+			}
+			// TODO: only delete oidc providers if they're owned by the cluster.
+			// We need to figure out how we can determine that given only a cluster name.
+			// Providers dont support tagging or naming.
+
+			// providers = append(providers, arn)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error listing IAM roles: %v", err)
+		}
+	}
+
+	var resourceTrackers []*resources.Resource
+
+	for _, arn := range providers {
+		resourceTracker := &resources.Resource{
+			Name:    aws.StringValue(arn),
+			ID:      aws.StringValue(arn),
+			Type:    "oidc-provider",
+			Deleter: DeleteIAMOIDCProvider,
+		}
+		resourceTrackers = append(resourceTrackers, resourceTracker)
+	}
+
+	return resourceTrackers, nil
+}
+
+func DeleteIAMOIDCProvider(cloud fi.Cloud, r *resources.Resource) error {
+	c := cloud.(awsup.AWSCloud)
+	arn := r.Obj.(*string)
+	{
+		klog.V(2).Infof("Deleting IAM OIDC Provider %v", arn)
+		request := &iam.DeleteOpenIDConnectProviderInput{
+			OpenIDConnectProviderArn: arn,
+		}
+		_, err := c.IAM().DeleteOpenIDConnectProvider(request)
+		if err != nil {
+			if awsup.AWSErrorCode(err) == "NoSuchEntity" {
+				klog.V(2).Infof("Got NoSuchEntity deleting IAM OIDC Provider %v; will treat as already-deleted", arn)
+				return nil
+			}
+
+			return fmt.Errorf("error deleting IAM OIDC Provider %v: %v", arn, err)
+		}
+	}
+
+	return nil
 }
 
 func ListSpotinstResources(cloud fi.Cloud, clusterName string) ([]*resources.Resource, error) {

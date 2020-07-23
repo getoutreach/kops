@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,9 +33,9 @@ const DefaultInstanceType = "ecs.n2.medium"
 type ScalingGroupModelBuilder struct {
 	*ALIModelContext
 
-	BootstrapScript   *model.BootstrapScript
-	Lifecycle         *fi.Lifecycle
-	SecurityLifecycle *fi.Lifecycle
+	BootstrapScriptBuilder *model.BootstrapScriptBuilder
+	Lifecycle              *fi.Lifecycle
+	SecurityLifecycle      *fi.Lifecycle
 }
 
 var _ fi.ModelBuilder = &ScalingGroupModelBuilder{}
@@ -118,7 +118,7 @@ func (b *ScalingGroupModelBuilder) Build(c *fi.ModelBuilderContext) error {
 				SecurityGroup: b.LinkToSecurityGroup(ig.Spec.Role),
 				RAMRole:       b.LinkToRAMRole(ig.Spec.Role),
 
-				ImageId:            s(ig.Spec.Image),
+				ImageID:            s(ig.Spec.Image),
 				InstanceType:       s(instanceType),
 				SystemDiskSize:     i(int(volumeSize)),
 				SystemDiskCategory: s(volumeType),
@@ -127,10 +127,9 @@ func (b *ScalingGroupModelBuilder) Build(c *fi.ModelBuilderContext) error {
 
 			if err != nil {
 				return err
-			} else {
-				launchConfiguration.SSHKey = b.LinkToSSHKey()
 			}
-			if launchConfiguration.UserData, err = b.BootstrapScript.ResourceNodeUp(ig, b.Cluster); err != nil {
+			launchConfiguration.SSHKey = b.LinkToSSHKey()
+			if launchConfiguration.UserData, err = b.BootstrapScriptBuilder.ResourceNodeUp(c, ig); err != nil {
 				return err
 			}
 		}

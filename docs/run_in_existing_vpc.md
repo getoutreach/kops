@@ -19,7 +19,6 @@ When launching into a shared VPC, the VPC & the Internet Gateway will be reused.
 
   ```yaml
   metadata:
-    creationTimestamp: "2016-06-27T14:23:34Z"
     name: ${CLUSTER_NAME}
   spec:
     cloudProvider: aws
@@ -73,7 +72,6 @@ AWS now allows you to add more CIDRs to a VPC, the param `additionalNetworkCIDRs
 
 ```yaml
 metadata:
-  creationTimestamp: "2016-06-27T14:23:34Z"
   name: ${CLUSTER_NAME}
 spec:
   cloudProvider: aws
@@ -120,9 +118,8 @@ spec:
 
 2. Then `kops edit cluster ${CLUSTER_NAME}` will show you something like:
 
-  ```
+  ```yaml
   metadata:
-    creationTimestamp: "2016-06-27T14:23:34Z"
     name: ${CLUSTER_NAME}
   spec:
     cloudProvider: aws
@@ -139,7 +136,7 @@ spec:
 
 3. Once you're happy, you can create the cluster using:
 
-  ```
+  ```shell
   kops update cluster ${CLUSTER_NAME} --yes
   ```
 
@@ -206,7 +203,7 @@ Please note:
 * kops won't create a route-table at all if we're not creating subnets.
 * In the example above the first subnet is using a shared NAT Gateway while the
   second one is using a shared NAT Instance
-  
+
 ### Externally Managed Egress
 
 If you are using an unsupported egress configuration in your VPC, _kops_ can be told to ignore egress by using a configuration like:

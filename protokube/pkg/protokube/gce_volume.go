@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,15 +17,14 @@ limitations under the License.
 package protokube
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"strings"
 
 	"cloud.google.com/go/compute/metadata"
-	"golang.org/x/net/context"
-	"golang.org/x/oauth2/google"
-	compute "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/klog"
 	"k8s.io/kops/protokube/pkg/etcd"
 	"k8s.io/kops/protokube/pkg/gossip"
@@ -51,11 +50,7 @@ var _ Volumes = &GCEVolumes{}
 func NewGCEVolumes() (*GCEVolumes, error) {
 	ctx := context.Background()
 
-	client, err := google.DefaultClient(ctx, compute.ComputeScope)
-	if err != nil {
-		return nil, fmt.Errorf("error building google API client: %v", err)
-	}
-	computeService, err := compute.New(client)
+	computeService, err := compute.NewService(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error building compute API client: %v", err)
 	}

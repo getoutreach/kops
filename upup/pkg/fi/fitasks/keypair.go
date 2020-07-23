@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,23 +17,16 @@ limitations under the License.
 package fitasks
 
 import (
-	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
-	"net"
 	"sort"
 	"strings"
+	"time"
 
 	"k8s.io/klog"
 	"k8s.io/kops/pkg/pki"
 	"k8s.io/kops/upup/pkg/fi"
 )
-
-var wellKnownCertificateTypes = map[string]string{
-	"ca":           "CA,KeyUsageCRLSign,KeyUsageCertSign",
-	"client":       "ExtKeyUsageClientAuth,KeyUsageDigitalSignature",
-	"clientServer": "ExtKeyUsageClientAuth,ExtKeyUsageServerAuth,KeyUsageDigitalSignature,KeyUsageKeyEncipherment",
-	"server":       "ExtKeyUsageServerAuth,KeyUsageDigitalSignature,KeyUsageKeyEncipherment",
-}
 
 //go:generate fitask -type=Keypair
 type Keypair struct {
@@ -41,8 +34,6 @@ type Keypair struct {
 	Name *string
 	// AlternateNames a list of alternative names for this certificate
 	AlternateNames []string `json:"alternateNames"`
-	// AlternateNameTasks is a collection of subtask
-	AlternateNameTasks []fi.Task `json:"alternateNameTasks"`
 	// Lifecycle is context for a task
 	Lifecycle *fi.Lifecycle
 	// Signer is the keypair to use to sign, for when we want to use an alternative CA
@@ -51,9 +42,8 @@ type Keypair struct {
 	Subject string `json:"subject"`
 	// Type the type of certificate i.e. CA, server, client etc
 	Type string `json:"type"`
-	// Format stores the api version of kops.Keyset.  We are using this info in order to determine if kops
-	// is accessing legacy secrets that do not use keyset.yaml.
-	Format string `json:"format"`
+	// LegacyFormat is whether the keypair is stored in a legacy format.
+	LegacyFormat bool `json:"oldFormat"`
 }
 
 var _ fi.HasCheckExisting = &Keypair{}
@@ -76,7 +66,7 @@ func (e *Keypair) Find(c *fi.Context) (*Keypair, error) {
 		return nil, nil
 	}
 
-	cert, key, format, err := c.Keystore.FindKeypair(name)
+	cert, key, legacyFormat, err := c.Keystore.FindKeypair(name)
 	if err != nil {
 		return nil, err
 	}
@@ -98,12 +88,12 @@ func (e *Keypair) Find(c *fi.Context) (*Keypair, error) {
 	actual := &Keypair{
 		Name:           &name,
 		AlternateNames: alternateNames,
-		Subject:        pkixNameToString(&cert.Subject),
-		Type:           buildTypeDescription(cert.Certificate),
-		Format:         string(format),
+		Subject:        pki.PkixNameToString(&cert.Subject),
+		Type:           pki.BuildTypeDescription(cert.Certificate),
+		LegacyFormat:   legacyFormat,
 	}
 
-	actual.Signer = &Keypair{Subject: pkixNameToString(&cert.Certificate.Issuer)}
+	actual.Signer = &Keypair{Subject: pki.PkixNameToString(&cert.Certificate.Issuer)}
 
 	// Avoid spurious changes
 	actual.Lifecycle = e.Lifecycle
@@ -112,14 +102,14 @@ func (e *Keypair) Find(c *fi.Context) (*Keypair, error) {
 }
 
 func (e *Keypair) Run(c *fi.Context) error {
-	err := e.normalize(c)
+	err := e.normalize()
 	if err != nil {
 		return err
 	}
 	return fi.DefaultDeltaRunMethod(e, c)
 }
 
-func (e *Keypair) normalize(c *fi.Context) error {
+func (e *Keypair) normalize() error {
 	var alternateNames []string
 
 	for _, s := range e.AlternateNames {
@@ -130,26 +120,8 @@ func (e *Keypair) normalize(c *fi.Context) error {
 		alternateNames = append(alternateNames, s)
 	}
 
-	for _, task := range e.AlternateNameTasks {
-		if hasAddress, ok := task.(fi.HasAddress); ok {
-			address, err := hasAddress.FindIPAddress(c)
-			if err != nil {
-				return fmt.Errorf("error finding address for %v: %v", task, err)
-			}
-			if address == nil {
-				klog.Warningf("Task did not have an address: %v", task)
-				continue
-			}
-			klog.V(8).Infof("Resolved alternateName %q for %q", *address, task)
-			alternateNames = append(alternateNames, *address)
-		} else {
-			return fmt.Errorf("Unsupported type for AlternateNameDependencies: %v", task)
-		}
-	}
-
 	sort.Strings(alternateNames)
 	e.AlternateNames = alternateNames
-	e.AlternateNameTasks = nil
 
 	return nil
 }
@@ -169,11 +141,6 @@ func (_ *Keypair) Render(c *fi.Context, a, e, changes *Keypair) error {
 		return fi.RequiredField("Name")
 	}
 
-	template, err := e.BuildCertificateTemplate()
-	if err != nil {
-		return err
-	}
-
 	changeStoredFormat := false
 	createCertificate := false
 	if a == nil {
@@ -190,7 +157,7 @@ func (_ *Keypair) Render(c *fi.Context, a, e, changes *Keypair) error {
 		} else if changes.Type != "" {
 			createCertificate = true
 			klog.V(8).Infof("creating certificate new Type")
-		} else if changes.Format != "" {
+		} else if changes.LegacyFormat {
 			changeStoredFormat = true
 		} else {
 			klog.Warningf("Ignoring changes in key: %v", fi.DebugAsJsonString(changes))
@@ -200,7 +167,7 @@ func (_ *Keypair) Render(c *fi.Context, a, e, changes *Keypair) error {
 	if createCertificate {
 		klog.V(2).Infof("Creating PKI keypair %q", name)
 
-		cert, privateKey, _, err := c.Keystore.FindKeypair(name)
+		_, privateKey, _, err := c.Keystore.FindKeypair(name)
 		if err != nil {
 			return err
 		}
@@ -210,19 +177,45 @@ func (_ *Keypair) Render(c *fi.Context, a, e, changes *Keypair) error {
 		// TODO: Eventually rotate keys / don't always reuse?
 		if privateKey == nil {
 			klog.V(2).Infof("Creating privateKey %q", name)
-
-			privateKey, err = pki.GeneratePrivateKey()
-			if err != nil {
-				return err
-			}
 		}
 
-		signer := fi.CertificateId_CA
+		signer := fi.CertificateIDCA
 		if e.Signer != nil {
 			signer = fi.StringValue(e.Signer.Name)
 		}
 
-		cert, err = c.Keystore.CreateKeypair(signer, name, template, privateKey)
+		klog.Infof("Issuing new certificate: %q", *e.Name)
+
+		serial := pki.BuildPKISerial(time.Now().UnixNano())
+
+		subjectPkix, err := parsePkixName(e.Subject)
+		if err != nil {
+			return fmt.Errorf("error parsing Subject: %v", err)
+		}
+
+		if len(subjectPkix.ToRDNSequence()) == 0 {
+			return fmt.Errorf("subject name was empty for SSL keypair %q", *e.Name)
+		}
+
+		req := pki.IssueCertRequest{
+			Signer:         signer,
+			Type:           e.Type,
+			Subject:        *subjectPkix,
+			AlternateNames: e.AlternateNames,
+			PrivateKey:     privateKey,
+			Serial:         serial,
+		}
+		cert, privateKey, _, err := pki.IssueCert(&req, c.Keystore)
+		if err != nil {
+			return err
+		}
+		err = c.Keystore.StoreKeypair(name, cert, privateKey)
+		if err != nil {
+			return err
+		}
+
+		// Make double-sure it round-trips
+		_, _, _, err = c.Keystore.FindKeypair(name)
 		if err != nil {
 			return err
 		}
@@ -244,104 +237,34 @@ func (_ *Keypair) Render(c *fi.Context, a, e, changes *Keypair) error {
 			return err
 		}
 
-		klog.Infof("updated Keypair %q to API format %q", name, e.Format)
+		klog.Infof("updated Keypair %q to new format", name)
 	}
 
 	return nil
 }
 
-// BuildCertificateTemplate is responsible for constructing a certificate template
-func (e *Keypair) BuildCertificateTemplate() (*x509.Certificate, error) {
-	template, err := buildCertificateTemplateForType(e.Type)
-	if err != nil {
-		return nil, err
-	}
+func parsePkixName(s string) (*pkix.Name, error) {
+	name := new(pkix.Name)
 
-	subjectPkix, err := parsePkixName(e.Subject)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing Subject: %v", err)
-	}
-
-	if len(subjectPkix.ToRDNSequence()) == 0 {
-		return nil, fmt.Errorf("Subject name was empty for SSL keypair %q", *e.Name)
-	}
-
-	template.Subject = *subjectPkix
-
-	var alternateNames []string
-	alternateNames = append(alternateNames, e.AlternateNames...)
-
-	for _, san := range alternateNames {
-		san = strings.TrimSpace(san)
-		if san == "" {
-			continue
+	tokens := strings.Split(s, ",")
+	for _, token := range tokens {
+		token = strings.TrimSpace(token)
+		kv := strings.SplitN(token, "=", 2)
+		if len(kv) != 2 {
+			return nil, fmt.Errorf("unrecognized token (expected k=v): %q", token)
 		}
-		if ip := net.ParseIP(san); ip != nil {
-			template.IPAddresses = append(template.IPAddresses, ip)
-		} else {
-			template.DNSNames = append(template.DNSNames, san)
+		k := strings.ToLower(kv[0])
+		v := kv[1]
+
+		switch k {
+		case "cn":
+			name.CommonName = v
+		case "o":
+			name.Organization = append(name.Organization, v)
+		default:
+			return nil, fmt.Errorf("unrecognized key %q in token %q", k, token)
 		}
 	}
 
-	return template, nil
-}
-
-func buildCertificateTemplateForType(certificateType string) (*x509.Certificate, error) {
-	if expanded, found := wellKnownCertificateTypes[certificateType]; found {
-		certificateType = expanded
-	}
-
-	template := &x509.Certificate{
-		BasicConstraintsValid: true,
-		IsCA:                  false,
-	}
-
-	tokens := strings.Split(certificateType, ",")
-	for _, t := range tokens {
-		if strings.HasPrefix(t, "KeyUsage") {
-			ku, found := parseKeyUsage(t)
-			if !found {
-				return nil, fmt.Errorf("unrecognized certificate option: %v", t)
-			}
-			template.KeyUsage |= ku
-		} else if strings.HasPrefix(t, "ExtKeyUsage") {
-			ku, found := parseExtKeyUsage(t)
-			if !found {
-				return nil, fmt.Errorf("unrecognized certificate option: %v", t)
-			}
-			template.ExtKeyUsage = append(template.ExtKeyUsage, ku)
-		} else if t == "CA" {
-			template.IsCA = true
-		} else {
-			return nil, fmt.Errorf("unrecognized certificate option: %q", t)
-		}
-	}
-
-	return template, nil
-}
-
-// buildTypeDescription extracts the type based on the certificate extensions
-func buildTypeDescription(cert *x509.Certificate) string {
-	var options []string
-
-	if cert.IsCA {
-		options = append(options, "CA")
-	}
-
-	options = append(options, keyUsageToString(cert.KeyUsage)...)
-
-	for _, extKeyUsage := range cert.ExtKeyUsage {
-		options = append(options, extKeyUsageToString(extKeyUsage))
-	}
-
-	sort.Strings(options)
-	s := strings.Join(options, ",")
-
-	for k, v := range wellKnownCertificateTypes {
-		if v == s {
-			s = k
-		}
-	}
-
-	return s
+	return name, nil
 }

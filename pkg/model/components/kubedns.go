@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package components
 import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/kops/pkg/apis/kops"
+	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/loader"
 )
 
@@ -72,6 +73,18 @@ func (b *KubeDnsOptionsBuilder) BuildOptions(o interface{}) error {
 	if clusterSpec.KubeDNS.MemoryLimit == nil || clusterSpec.KubeDNS.MemoryLimit.IsZero() {
 		defaultMemoryLimit := resource.MustParse("170Mi")
 		clusterSpec.KubeDNS.MemoryLimit = &defaultMemoryLimit
+	}
+
+	nodeLocalDNS := clusterSpec.KubeDNS.NodeLocalDNS
+	if nodeLocalDNS == nil {
+		nodeLocalDNS = &kops.NodeLocalDNSConfig{}
+		clusterSpec.KubeDNS.NodeLocalDNS = nodeLocalDNS
+	}
+	if nodeLocalDNS.Enabled == nil {
+		nodeLocalDNS.Enabled = fi.Bool(false)
+	}
+	if fi.BoolValue(nodeLocalDNS.Enabled) && nodeLocalDNS.LocalIP == "" {
+		nodeLocalDNS.LocalIP = "169.254.20.10"
 	}
 
 	return nil

@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -37,8 +37,8 @@ func (b *MiscUtilsBuilder) Build(c *fi.ModelBuilderContext) error {
 	case distros.DistributionContainerOS:
 		klog.V(2).Infof("Detected ContainerOS; won't install misc. utils")
 		return nil
-	case distros.DistributionCoreOS:
-		klog.V(2).Infof("Detected CoreOS; won't install misc. utils")
+	case distros.DistributionFlatcar:
+		klog.V(2).Infof("Detected Flatcar; won't install misc. utils")
 		return nil
 	}
 
@@ -47,14 +47,17 @@ func (b *MiscUtilsBuilder) Build(c *fi.ModelBuilderContext) error {
 
 	var packages []string
 	if b.Distribution.IsDebianFamily() {
-		packages = append(packages, "socat")
 		packages = append(packages, "curl")
+		packages = append(packages, "wget")
 		packages = append(packages, "nfs-common")
+		packages = append(packages, "perl")
 		packages = append(packages, "python-apt")
 		packages = append(packages, "apt-transport-https")
 	} else if b.Distribution.IsRHELFamily() {
 		packages = append(packages, "curl")
-		packages = append(packages, "python")
+		packages = append(packages, "wget")
+		packages = append(packages, "nfs-utils")
+		packages = append(packages, "python2")
 		packages = append(packages, "git")
 	} else {
 		klog.Warningf("unknown distribution, skipping misc utils install: %v", b.Distribution)

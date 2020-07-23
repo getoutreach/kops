@@ -18,7 +18,7 @@ Please follow our [basic-requirements document](basic-requirements.md) that is c
 
 ## DNS Setup - AWS Route53
 
-For our setup we already have a hosted DNS domain in AWS: 
+For our setup we already have a hosted DNS domain in AWS:
 
 ```bash
  aws route53 list-hosted-zones --output=table
@@ -321,7 +321,7 @@ Suggestions:
  * list nodes: kubectl get nodes --show-labels
  * ssh to the master: ssh -i ~/.ssh/id_rsa admin@api.mycluster01.kopsclustertest.example.org
 The admin user is specific to Debian. If not using Debian please use the appropriate user based on your OS.
- * read about installing addons: https://github.com/kubernetes/kops/blob/master/docs/addons.md
+ * read about installing addons: https://github.com/kubernetes/kops/blob/master/docs/operations/addons.md
 ```
 
 Note that KOPS will create a DNS record for your API: api.mycluster01.kopsclustertest.example.org. You can check this record with the following "dig" command:
@@ -685,11 +685,10 @@ kops edit ig nodes
 
 An editor (whatever you have on the $EDITOR shell variable) will open with the following text:
 
-```
+```yaml
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-09-06T13:40:39Z
   labels:
     kops.k8s.io/cluster: mycluster01.kopsclustertest.example.org
   name: nodes
@@ -707,11 +706,10 @@ spec:
 
 Let's change minSize and maxSize to "3"
 
-```
+```yaml
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-09-06T13:40:39Z
   labels:
     kops.k8s.io/cluster: mycluster01.kopsclustertest.example.org
   name: nodes
@@ -731,7 +729,7 @@ Save it and review with `kops update cluster $NAME`:
 
 ```bash
 kops update cluster $NAME
-``` 
+```
 
 The last command will output:
 
@@ -747,13 +745,13 @@ Will modify resources:
         MaxSize                  2 -> 3
 
 Must specify --yes to apply changes
-``` 
+```
 
 Now, let's apply the change:
 
 ```bash
 kops update cluster $NAME --yes
-``` 
+```
 
 Go for another coffee (or maybe a tee) and after some minutes check your cluster again with "kops validate cluster"
 
@@ -784,9 +782,10 @@ Your cluster mycluster01.kopsclustertest.example.org is ready
 
 ```
 
-You can see how your cluster scaled up to 3 nodes. 
+You can see how your cluster scaled up to 3 nodes.
 
 **SCALING RECOMMENDATIONS:**
+
 - Always think ahead. If you want to ensure to have the capability to scale-up to all available zones in the region, ensure to add them to the "--zones=" argument when using the "kops create cluster" command. Example: --zones=us-east-1a,us-east-1b,us-east-1c,us-east-1d,us-east-1e. That will make things simpler later.
 - For the masters, always consider "odd" numbers starting from 3. Like many other cluster, odd numbers starting from "3" are the proper way to create a fully redundant multi-master solution. In the specific case of "kops", you add masters by adding zones to the "--master-zones" argument on "kops create command".
 

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ func (b *IAMModelBuilder) Build(c *fi.ModelBuilderContext) error {
 			specProfile := fi.StringValue(ig.Spec.IAM.Profile)
 			if matchingRole, ok := sharedProfileARNsToIGRole[specProfile]; ok {
 				if matchingRole != ig.Spec.Role {
-					return fmt.Errorf("Found IAM instance profile assigned to multiple Instance Group roles %v and %v: %v",
+					return fmt.Errorf("found IAM instance profile assigned to multiple Instance Group roles %v and %v: %v",
 						ig.Spec.Role, sharedProfileARNsToIGRole[specProfile], specProfile)
 				}
 			} else {
@@ -163,6 +163,27 @@ func (b *IAMModelBuilder) buildIAMTasks(igRole kops.InstanceGroupRole, iamName s
 				Role:            iamRole,
 			}
 			c.AddTask(iamInstanceProfileRole)
+		}
+
+		// Create External Policy tasks
+		{
+			var externalPolicies []string
+
+			if b.Cluster.Spec.ExternalPolicies != nil {
+				p := *(b.Cluster.Spec.ExternalPolicies)
+				externalPolicies = append(externalPolicies, p[strings.ToLower(string(igRole))]...)
+			}
+
+			name := fmt.Sprintf("%s-policyoverride", strings.ToLower(string(igRole)))
+			t := &awstasks.IAMRolePolicy{
+				Name:             s(name),
+				Lifecycle:        b.Lifecycle,
+				Role:             iamRole,
+				Managed:          true,
+				ExternalPolicies: &externalPolicies,
+			}
+
+			c.AddTask(t)
 		}
 
 		// Generate additional policies if needed, and attach to existing role

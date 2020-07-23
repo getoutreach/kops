@@ -1,14 +1,34 @@
 language: go
+arch:
+  - amd64
+  - arm64
 os:
   - linux
   - osx
 go:
-  # 1.10 & 1.11 are now best-effort; we recommend 1.12
-  # - "1.10" gofmt changes mean 1.10 fails testing
-  - "1.11"
-  - "1.12"
+  - 1.13.x
+  - 1.14.x
 
 go_import_path: k8s.io/kops
 
 script:
-  - make travis-ci
+  - GOPROXY=https://proxy.golang.org travis_wait 30 make nodeup examples test
+
+jobs:
+  allow_failures:
+    - arch: arm64
+
+  exclude:
+    - os: osx
+      go: 1.13.x
+    - os: linux
+      go: 1.13.x
+      arch: arm64
+
+  include:
+    - name: Verify
+      arch: amd64
+      os: linux
+      go: 1.14.x
+      script:
+        - GOPROXY=https://proxy.golang.org make travis-ci

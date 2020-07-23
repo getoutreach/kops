@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"io"
@@ -28,8 +29,8 @@ import (
 	"k8s.io/kops/pkg/instancegroups"
 	"k8s.io/kops/upup/pkg/fi/cloudup"
 	"k8s.io/kops/util/pkg/ui"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -65,6 +66,8 @@ func NewCmdDeleteInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    deleteIgLong,
 		Example: deleteIgExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			if len(args) == 0 {
 				exitWithError(fmt.Errorf("Specify name of instance group to delete"))
 			}
@@ -98,7 +101,7 @@ func NewCmdDeleteInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 				}
 			}
 
-			err := RunDeleteInstanceGroup(f, out, options)
+			err := RunDeleteInstanceGroup(ctx, f, out, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -111,7 +114,7 @@ func NewCmdDeleteInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 }
 
 // RunDeleteInstanceGroup runs the deletion of an instance group
-func RunDeleteInstanceGroup(f *util.Factory, out io.Writer, options *DeleteInstanceGroupOptions) error {
+func RunDeleteInstanceGroup(ctx context.Context, f *util.Factory, out io.Writer, options *DeleteInstanceGroupOptions) error {
 
 	// TODO make this drain and validate the ig?
 	// TODO implement drain and validate logic
@@ -125,7 +128,7 @@ func RunDeleteInstanceGroup(f *util.Factory, out io.Writer, options *DeleteInsta
 		return fmt.Errorf("ClusterName is required")
 	}
 
-	cluster, err := GetCluster(f, clusterName)
+	cluster, err := GetCluster(ctx, f, clusterName)
 	if err != nil {
 		return err
 	}
@@ -135,7 +138,7 @@ func RunDeleteInstanceGroup(f *util.Factory, out io.Writer, options *DeleteInsta
 		return err
 	}
 
-	group, err := clientset.InstanceGroupsFor(cluster).Get(groupName, metav1.GetOptions{})
+	group, err := clientset.InstanceGroupsFor(cluster).Get(ctx, groupName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("error reading InstanceGroup %q: %v", groupName, err)
 	}

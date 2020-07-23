@@ -20,8 +20,6 @@ import (
 	"reflect"
 	"testing"
 
-	"crypto/x509"
-
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/pki"
@@ -48,9 +46,7 @@ func (f fakeStatusStore) GetApiIngressStatus(cluster *kops.Cluster) ([]kops.ApiI
 
 // mock a fake key store
 type fakeKeyStore struct {
-	FindKeypairFn func(name string) (*pki.Certificate, *pki.PrivateKey, fi.KeysetFormat, error)
-
-	CreateKeypairFn func(signer string, name string, template *x509.Certificate, privateKey *pki.PrivateKey) (*pki.Certificate, error)
+	FindKeypairFn func(name string) (*pki.Certificate, *pki.PrivateKey, bool, error)
 
 	// StoreKeypair writes the keypair to the store
 	StoreKeypairFn func(id string, cert *pki.Certificate, privateKey *pki.PrivateKey) error
@@ -59,12 +55,8 @@ type fakeKeyStore struct {
 	MirrorToFn func(basedir vfs.Path) error
 }
 
-func (f fakeKeyStore) FindKeypair(name string) (*pki.Certificate, *pki.PrivateKey, fi.KeysetFormat, error) {
+func (f fakeKeyStore) FindKeypair(name string) (*pki.Certificate, *pki.PrivateKey, bool, error) {
 	return f.FindKeypairFn(name)
-}
-
-func (f fakeKeyStore) CreateKeypair(signer string, name string, template *x509.Certificate, privateKey *pki.PrivateKey) (*pki.Certificate, error) {
-	return f.CreateKeypairFn(signer, name, template, privateKey)
 }
 
 func (f fakeKeyStore) StoreKeypair(id string, cert *pki.Certificate, privateKey *pki.PrivateKey) error {
@@ -79,7 +71,7 @@ func (f fakeKeyStore) MirrorTo(basedir vfs.Path) error {
 func buildMinimalCluster(clusterName string, masterPublicName string) *kops.Cluster {
 	c := &kops.Cluster{}
 	c.ObjectMeta.Name = clusterName
-	c.Spec.KubernetesVersion = "1.4.6"
+	c.Spec.KubernetesVersion = "1.14.6"
 	c.Spec.Subnets = []kops.ClusterSubnetSpec{
 		{Name: "subnet-us-mock-1a", Zone: "us-mock-1a", CIDR: "172.20.1.0/24", Type: kops.SubnetTypePrivate},
 	}
@@ -127,6 +119,8 @@ func TestBuildKubecfg(t *testing.T) {
 		secretStore  fi.SecretStore
 		status       fakeStatusStore
 		configAccess clientcmd.ConfigAccess
+		admin        bool
+		user         string
 	}
 
 	publiccluster := buildMinimalCluster("testcluster", "testcluster.test.com")
@@ -140,20 +134,22 @@ func TestBuildKubecfg(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			"Test Kube Config Data For Public DNS",
+			"Test Kube Config Data For Public DNS with admin",
 			args{
 				publiccluster,
 				fakeKeyStore{
-					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, fi.KeysetFormat, error) {
+					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, bool, error) {
 						return fakeCertificate(),
 							fakePrivateKey(),
-							fi.KeysetFormatLegacy,
+							true,
 							nil
 					},
 				},
 				nil,
 				fakeStatusStore{},
 				nil,
+				true,
+				"",
 			},
 			&KubeconfigBuilder{
 				Context:    "testcluster",
@@ -161,6 +157,35 @@ func TestBuildKubecfg(t *testing.T) {
 				CACert:     []byte(certData),
 				ClientCert: []byte(certData),
 				ClientKey:  []byte(privatekeyData),
+				User:       "testcluster",
+			},
+			false,
+		},
+		{
+			"Test Kube Config Data For Public DNS without admin",
+			args{
+				publiccluster,
+				fakeKeyStore{
+					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, bool, error) {
+						return fakeCertificate(),
+							fakePrivateKey(),
+							true,
+							nil
+					},
+				},
+				nil,
+				fakeStatusStore{},
+				nil,
+				false,
+				"myuser",
+			},
+			&KubeconfigBuilder{
+				Context:    "testcluster",
+				Server:     "https://testcluster.test.com",
+				CACert:     []byte(certData),
+				ClientCert: nil,
+				ClientKey:  nil,
+				User:       "myuser",
 			},
 			false,
 		},
@@ -169,16 +194,18 @@ func TestBuildKubecfg(t *testing.T) {
 			args{
 				emptyMasterPublicNameCluster,
 				fakeKeyStore{
-					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, fi.KeysetFormat, error) {
+					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, bool, error) {
 						return fakeCertificate(),
 							fakePrivateKey(),
-							fi.KeysetFormatLegacy,
+							true,
 							nil
 					},
 				},
 				nil,
 				fakeStatusStore{},
 				nil,
+				true,
+				"",
 			},
 			&KubeconfigBuilder{
 				Context:    "emptyMasterPublicNameCluster",
@@ -186,6 +213,7 @@ func TestBuildKubecfg(t *testing.T) {
 				CACert:     []byte(certData),
 				ClientCert: []byte(certData),
 				ClientKey:  []byte(privatekeyData),
+				User:       "emptyMasterPublicNameCluster",
 			},
 			false,
 		},
@@ -194,10 +222,10 @@ func TestBuildKubecfg(t *testing.T) {
 			args{
 				gossipCluster,
 				fakeKeyStore{
-					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, fi.KeysetFormat, error) {
+					FindKeypairFn: func(name string) (*pki.Certificate, *pki.PrivateKey, bool, error) {
 						return fakeCertificate(),
 							fakePrivateKey(),
-							fi.KeysetFormatLegacy,
+							true,
 							nil
 					},
 				},
@@ -212,6 +240,8 @@ func TestBuildKubecfg(t *testing.T) {
 					},
 				},
 				nil,
+				true,
+				"",
 			},
 			&KubeconfigBuilder{
 				Context:    "testgossipcluster.k8s.local",
@@ -219,13 +249,14 @@ func TestBuildKubecfg(t *testing.T) {
 				CACert:     []byte(certData),
 				ClientCert: []byte(certData),
 				ClientKey:  []byte(privatekeyData),
+				User:       "testgossipcluster.k8s.local",
 			},
 			false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := BuildKubecfg(tt.args.cluster, tt.args.keyStore, tt.args.secretStore, tt.args.status, tt.args.configAccess)
+			got, err := BuildKubecfg(tt.args.cluster, tt.args.keyStore, tt.args.secretStore, tt.args.status, tt.args.configAccess, tt.args.admin, tt.args.user)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("BuildKubecfg() error = %v, wantErr %v", err, tt.wantErr)
 				return

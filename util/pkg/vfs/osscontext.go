@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,14 +21,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/denverdino/aliyungo/metadata"
 	"github.com/denverdino/aliyungo/oss"
 )
 
 type aliyunOSSConfig struct {
 	region          oss.Region
 	internal        bool
-	accessKeyId     string
+	accessKeyID     string
 	accessKeySecret string
+	securityToken   string
 	secure          bool
 }
 
@@ -50,23 +52,46 @@ func NewAliOSSClient() (*oss.Client, error) {
 		return nil, fmt.Errorf("error building aliyun oss client: %v", err)
 	}
 
-	return oss.NewOSSClient(c.region, c.internal, c.accessKeyId, c.accessKeySecret, c.secure), nil
+	if c.securityToken != "" {
+		return oss.NewOSSClientForAssumeRole(c.region, c.internal, c.accessKeyID, c.accessKeySecret, c.securityToken, c.secure), nil
+	}
+
+	return oss.NewOSSClient(c.region, c.internal, c.accessKeyID, c.accessKeySecret, c.secure), nil
 }
 
 func (c *aliyunOSSConfig) loadConfig() error {
+	meta := metadata.NewMetaData(nil)
+
 	c.region = oss.Region(os.Getenv("OSS_REGION"))
 	if c.region == "" {
-		// TODO: can we use default region?
-		return fmt.Errorf("OSS_REGION cannot be empty")
+		region, err := meta.Region()
+		if err != nil {
+			return fmt.Errorf("can't get region-id from ECS metadata")
+		}
+		c.region = oss.Region(fmt.Sprintf("oss-%s", region))
 	}
-	c.accessKeyId = os.Getenv("ALIYUN_ACCESS_KEY_ID")
-	if c.accessKeyId == "" {
-		return fmt.Errorf("ALIYUN_ACCESS_KEY_ID cannot be empty")
+
+	c.accessKeyID = os.Getenv("ALIYUN_ACCESS_KEY_ID")
+	if c.accessKeyID != "" {
+		c.accessKeySecret = os.Getenv("ALIYUN_ACCESS_KEY_SECRET")
+		if c.accessKeySecret == "" {
+			return fmt.Errorf("ALIYUN_ACCESS_KEY_SECRET cannot be empty")
+		}
+	} else {
+		role, err := meta.RoleName()
+		if err != nil {
+			return fmt.Errorf("Can't find role from ECS metadata: %s", err)
+		}
+
+		roleAuth, err := meta.RamRoleToken(role)
+		if err != nil {
+			return fmt.Errorf("Can't get role token: %s", err)
+		}
+		c.accessKeyID = roleAuth.AccessKeyId
+		c.accessKeySecret = roleAuth.AccessKeySecret
+		c.securityToken = roleAuth.SecurityToken
 	}
-	c.accessKeySecret = os.Getenv("ALIYUN_ACCESS_KEY_SECRET")
-	if c.accessKeySecret == "" {
-		return fmt.Errorf("ALIYUN_ACCESS_KEY_SECRET cannot be empty")
-	}
+
 	ossInternal := os.Getenv("ALIYUN_OSS_INTERNAL")
 	if ossInternal != "" {
 		c.internal = true

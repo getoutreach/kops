@@ -23,6 +23,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
+type launchTemplateInfo struct {
+	data *ec2.ResponseLaunchTemplateData
+	name *string
+}
+
 // DescribeLaunchTemplates mocks the describing the launch templates
 func (m *MockEC2) DescribeLaunchTemplates(request *ec2.DescribeLaunchTemplatesInput) (*ec2.DescribeLaunchTemplatesOutput, error) {
 	m.mutex.Lock()
@@ -34,16 +39,16 @@ func (m *MockEC2) DescribeLaunchTemplates(request *ec2.DescribeLaunchTemplatesIn
 		return o, nil
 	}
 
-	for name := range m.LaunchTemplates {
+	for _, ltInfo := range m.LaunchTemplates {
 		o.LaunchTemplates = append(o.LaunchTemplates, &ec2.LaunchTemplate{
-			LaunchTemplateName: aws.String(name),
+			LaunchTemplateName: ltInfo.name,
 		})
 	}
 
 	return o, nil
 }
 
-// DescribeLaunchTemplateVersions mocks the retrieval of launch template versions - we dont use this at the moment so we can just return the template
+// DescribeLaunchTemplateVersions mocks the retrieval of launch template versions - we don't use this at the moment so we can just return the template
 func (m *MockEC2) DescribeLaunchTemplateVersions(request *ec2.DescribeLaunchTemplateVersionsInput) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
@@ -54,16 +59,17 @@ func (m *MockEC2) DescribeLaunchTemplateVersions(request *ec2.DescribeLaunchTemp
 		return o, nil
 	}
 
-	lt, found := m.LaunchTemplates[aws.StringValue(request.LaunchTemplateName)]
-	if !found {
-		return o, nil
+	for id, ltInfo := range m.LaunchTemplates {
+		if aws.StringValue(ltInfo.name) != aws.StringValue(request.LaunchTemplateName) {
+			continue
+		}
+		o.LaunchTemplateVersions = append(o.LaunchTemplateVersions, &ec2.LaunchTemplateVersion{
+			DefaultVersion:     aws.Bool(true),
+			LaunchTemplateId:   aws.String(id),
+			LaunchTemplateData: ltInfo.data,
+			LaunchTemplateName: request.LaunchTemplateName,
+		})
 	}
-	o.LaunchTemplateVersions = append(o.LaunchTemplateVersions, &ec2.LaunchTemplateVersion{
-		DefaultVersion:     aws.Bool(true),
-		LaunchTemplateData: lt,
-		LaunchTemplateName: request.LaunchTemplateName,
-	})
-
 	return o, nil
 }
 
@@ -72,11 +78,15 @@ func (m *MockEC2) CreateLaunchTemplate(request *ec2.CreateLaunchTemplateInput) (
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	m.launchTemplateNumber++
+	n := m.launchTemplateNumber
+	id := fmt.Sprintf("lt-%d", n)
+
 	if m.LaunchTemplates == nil {
-		m.LaunchTemplates = make(map[string]*ec2.ResponseLaunchTemplateData)
+		m.LaunchTemplates = make(map[string]*launchTemplateInfo)
 	}
-	if m.LaunchTemplates[aws.StringValue(request.LaunchTemplateName)] != nil {
-		return nil, fmt.Errorf("duplicate LaunchTemplateName %s", aws.StringValue(request.LaunchTemplateName))
+	if m.LaunchTemplates[id] != nil {
+		return nil, fmt.Errorf("duplicate LaunchTemplateName %s", id)
 	}
 	resp := &ec2.ResponseLaunchTemplateData{
 		DisableApiTermination: request.LaunchTemplateData.DisableApiTermination,
@@ -88,9 +98,10 @@ func (m *MockEC2) CreateLaunchTemplate(request *ec2.CreateLaunchTemplateInput) (
 		SecurityGroups:        request.LaunchTemplateData.SecurityGroups,
 		UserData:              request.LaunchTemplateData.UserData,
 	}
-	m.LaunchTemplates[aws.StringValue(request.LaunchTemplateName)] = resp
-
-	// @GOD DAMN AWS request vs response .. fu@@@@@ .. so much typing!!#@#@#
+	m.LaunchTemplates[id] = &launchTemplateInfo{
+		data: resp,
+		name: request.LaunchTemplateName,
+	}
 
 	if request.LaunchTemplateData.Monitoring != nil {
 		resp.Monitoring = &ec2.LaunchTemplatesMonitoring{Enabled: request.LaunchTemplateData.Monitoring.Enabled}
@@ -103,9 +114,9 @@ func (m *MockEC2) CreateLaunchTemplate(request *ec2.CreateLaunchTemplateInput) (
 	}
 	if len(request.LaunchTemplateData.BlockDeviceMappings) > 0 {
 		for _, x := range request.LaunchTemplateData.BlockDeviceMappings {
-			resp.BlockDeviceMappings = append(resp.BlockDeviceMappings, &ec2.LaunchTemplateBlockDeviceMapping{
-				DeviceName: x.DeviceName,
-				Ebs: &ec2.LaunchTemplateEbsBlockDevice{
+			var ebs *ec2.LaunchTemplateEbsBlockDevice
+			if x.Ebs != nil {
+				ebs = &ec2.LaunchTemplateEbsBlockDevice{
 					DeleteOnTermination: x.Ebs.DeleteOnTermination,
 					Encrypted:           x.Ebs.Encrypted,
 					Iops:                x.Ebs.Iops,
@@ -113,7 +124,11 @@ func (m *MockEC2) CreateLaunchTemplate(request *ec2.CreateLaunchTemplateInput) (
 					SnapshotId:          x.Ebs.SnapshotId,
 					VolumeSize:          x.Ebs.VolumeSize,
 					VolumeType:          x.Ebs.VolumeType,
-				},
+				}
+			}
+			resp.BlockDeviceMappings = append(resp.BlockDeviceMappings, &ec2.LaunchTemplateBlockDeviceMapping{
+				DeviceName:  x.DeviceName,
+				Ebs:         ebs,
 				NoDevice:    x.NoDevice,
 				VirtualName: x.VirtualName,
 			})
@@ -157,6 +172,15 @@ func (m *MockEC2) CreateLaunchTemplate(request *ec2.CreateLaunchTemplateInput) (
 			})
 		}
 	}
+	if len(request.LaunchTemplateData.TagSpecifications) > 0 {
+		for _, x := range request.LaunchTemplateData.TagSpecifications {
+			resp.TagSpecifications = append(resp.TagSpecifications, &ec2.LaunchTemplateTagSpecification{
+				ResourceType: x.ResourceType,
+				Tags:         x.Tags,
+			})
+		}
+	}
+	m.addTags(id, tagSpecificationsToTags(request.TagSpecifications, ec2.ResourceTypeLaunchTemplate)...)
 
 	return &ec2.CreateLaunchTemplateOutput{}, nil
 }
@@ -171,7 +195,11 @@ func (m *MockEC2) DeleteLaunchTemplate(request *ec2.DeleteLaunchTemplateInput) (
 	if m.LaunchTemplates == nil {
 		return o, nil
 	}
-	delete(m.LaunchTemplates, aws.StringValue(request.LaunchTemplateName))
+	for id, lt := range m.LaunchTemplates {
+		if aws.StringValue(lt.name) == aws.StringValue(request.LaunchTemplateName) {
+			delete(m.LaunchTemplates, id)
+		}
+	}
 
 	return o, nil
 }

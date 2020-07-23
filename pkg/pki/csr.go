@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ func BuildPKISerial(timestamp int64) *big.Int {
 	return serial
 }
 
-func SignNewCertificate(privateKey *PrivateKey, template *x509.Certificate, signer *x509.Certificate, signerPrivateKey *PrivateKey) (*Certificate, error) {
+func signNewCertificate(privateKey *PrivateKey, template *x509.Certificate, signer *x509.Certificate, signerPrivateKey *PrivateKey) (*Certificate, error) {
 	if template.PublicKey == nil {
 		rsaPrivateKey, ok := privateKey.Key.(*rsa.PrivateKey)
 		if ok {
@@ -89,21 +89,24 @@ func SignNewCertificate(privateKey *PrivateKey, template *x509.Certificate, sign
 	if template.ExtKeyUsage == nil && !template.IsCA {
 		template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
 	}
-	//c.SignatureAlgorithm  = do we want to overrride?
+	//c.SignatureAlgorithm  = do we want to override?
 
 	certificateData, err := x509.CreateCertificate(crypto_rand.Reader, template, parent, template.PublicKey, signerPrivateKey.Key)
 	if err != nil {
 		return nil, fmt.Errorf("error creating certificate: %v", err)
 	}
 
-	c := &Certificate{}
-	c.PublicKey = template.PublicKey
-
 	cert, err := x509.ParseCertificate(certificateData)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing certificate: %v", err)
 	}
-	c.Certificate = cert
+
+	c := &Certificate{
+		Subject:     cert.Subject,
+		IsCA:        cert.IsCA,
+		Certificate: cert,
+		PublicKey:   cert.PublicKey,
+	}
 
 	return c, nil
 }

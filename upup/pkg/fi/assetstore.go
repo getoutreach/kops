@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ type Source struct {
 	ExtractFromArchive string
 }
 
-// Builds a unique key for this source
+// Key builds a unique key for this source
 func (s *Source) Key() string {
 	var k string
 	if s.Parent != nil {
@@ -73,18 +73,18 @@ type HasSource interface {
 
 // assetResource implements Resource, but also implements HasFetchInstructions
 type assetResource struct {
-	asset *asset
+	Asset *asset
 }
 
 var _ Resource = &assetResource{}
 var _ HasSource = &assetResource{}
 
 func (r *assetResource) Open() (io.Reader, error) {
-	return r.asset.resource.Open()
+	return r.Asset.resource.Open()
 }
 
 func (r *assetResource) GetSource() *Source {
-	return r.asset.source
+	return r.Asset.source
 }
 
 type AssetStore struct {
@@ -119,7 +119,7 @@ func (a *AssetStore) Find(key string, assetPath string) (Resource, error) {
 	}
 	if len(matches) == 1 {
 		klog.Infof("Resolved asset %s:%s to %s", key, assetPath, matches[0].AssetPath)
-		return &assetResource{asset: matches[0]}, nil
+		return &assetResource{Asset: matches[0]}, nil
 	}
 
 	klog.Infof("Matching assets:")
@@ -129,7 +129,16 @@ func (a *AssetStore) Find(key string, assetPath string) (Resource, error) {
 	return nil, fmt.Errorf("found multiple matching assets for key: %q", key)
 }
 
-func hashFromHttpHeader(url string) (*hashing.Hash, error) {
+// Add an asset into the store, in one of the recognized formats (see Assets in types package)
+func (a *AssetStore) AddForTest(id string, content string) {
+	a.assets = append(a.assets, &asset{
+		Key:       id,
+		AssetPath: "/path/to/" + id + "/asset",
+		resource:  NewStringResource(content),
+	})
+}
+
+func hashFromHTTPHeader(url string) (*hashing.Hash, error) {
 	klog.Infof("Doing HTTP HEAD on %q", url)
 	response, err := http.Head(url)
 	if err != nil {
@@ -180,7 +189,7 @@ func (a *AssetStore) addURLs(urls []string, hash *hashing.Hash) error {
 	var err error
 	if hash == nil {
 		for _, url := range urls {
-			hash, err = hashFromHttpHeader(url)
+			hash, err = hashFromHTTPHeader(url)
 			if err != nil {
 				klog.Warningf("unable to get hash from %q: %v", url, err)
 				continue

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -26,7 +27,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 	"k8s.io/kops/cmd/kops/util"
@@ -37,8 +37,8 @@ import (
 	"k8s.io/kops/upup/pkg/fi/cloudup"
 	"k8s.io/kops/upup/pkg/fi/utils"
 	"k8s.io/kops/upup/pkg/kutil"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -52,20 +52,23 @@ var (
 
 	updateClusterExample = templates.Examples(i18n.T(`
 	# After cluster has been edited or upgraded, configure it with:
-	kops update cluster k8s-cluster.example.com --yes --state=s3://kops-state-1234 --yes
+	kops update cluster k8s-cluster.example.com --yes --state=s3://kops-state-1234 --yes --admin
 	`))
 
 	updateClusterShort = i18n.T("Update a cluster.")
 )
 
 type UpdateClusterOptions struct {
-	Yes             bool
-	Target          string
-	Models          string
-	OutDir          string
-	SSHPublicKey    string
-	RunTasksOptions fi.RunTasksOptions
-	CreateKubecfg   bool
+	Yes                bool
+	Target             string
+	OutDir             string
+	SSHPublicKey       string
+	RunTasksOptions    fi.RunTasksOptions
+	AllowKopsDowngrade bool
+
+	CreateKubecfg bool
+	admin         bool
+	user          string
 
 	Phase string
 
@@ -77,10 +80,9 @@ type UpdateClusterOptions struct {
 func (o *UpdateClusterOptions) InitDefaults() {
 	o.Yes = false
 	o.Target = "direct"
-	o.Models = strings.Join(cloudup.CloudupModels, ",")
 	o.SSHPublicKey = ""
 	o.OutDir = ""
-	o.CreateKubecfg = true
+	o.CreateKubecfg = false
 	o.RunTasksOptions.InitDefaults()
 }
 
@@ -94,6 +96,8 @@ func NewCmdUpdateCluster(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    updateClusterLong,
 		Example: updateClusterExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			err := rootCommand.ProcessArgs(args)
 			if err != nil {
 				exitWithError(err)
@@ -101,7 +105,7 @@ func NewCmdUpdateCluster(f *util.Factory, out io.Writer) *cobra.Command {
 
 			clusterName := rootCommand.ClusterName()
 
-			if _, err := RunUpdateCluster(f, clusterName, out, options); err != nil {
+			if _, err := RunUpdateCluster(ctx, f, clusterName, out, options); err != nil {
 				exitWithError(err)
 			}
 		},
@@ -109,10 +113,12 @@ func NewCmdUpdateCluster(f *util.Factory, out io.Writer) *cobra.Command {
 
 	cmd.Flags().BoolVarP(&options.Yes, "yes", "y", options.Yes, "Create cloud resources, without --yes update is in dry run mode")
 	cmd.Flags().StringVar(&options.Target, "target", options.Target, "Target - direct, terraform, cloudformation")
-	cmd.Flags().StringVar(&options.Models, "model", options.Models, "Models to apply (separate multiple models with commas)")
 	cmd.Flags().StringVar(&options.SSHPublicKey, "ssh-public-key", options.SSHPublicKey, "SSH public key to use (deprecated: use kops create secret instead)")
 	cmd.Flags().StringVar(&options.OutDir, "out", options.OutDir, "Path to write any local output")
 	cmd.Flags().BoolVar(&options.CreateKubecfg, "create-kube-config", options.CreateKubecfg, "Will control automatically creating the kube config file on your local filesystem")
+	cmd.Flags().BoolVar(&options.admin, "admin", options.admin, "Also export the admin user. Implies --create-kube-config")
+	cmd.Flags().StringVar(&options.user, "user", options.user, "Existing user to add to the cluster context. Implies --create-kube-config")
+	cmd.Flags().BoolVar(&options.AllowKopsDowngrade, "allow-kops-downgrade", options.AllowKopsDowngrade, "Allow an older version of kops to update the cluster than last used")
 	cmd.Flags().StringVar(&options.Phase, "phase", options.Phase, "Subset of tasks to run: "+strings.Join(cloudup.Phases.List(), ", "))
 	cmd.Flags().StringSliceVar(&options.LifecycleOverrides, "lifecycle-overrides", options.LifecycleOverrides, "comma separated list of phase overrides, example: SecurityGroups=Ignore,InternetGateway=ExistsAndWarnIfChanges")
 	viper.BindPFlag("lifecycle-overrides", cmd.Flags().Lookup("lifecycle-overrides"))
@@ -129,11 +135,29 @@ type UpdateClusterResults struct {
 	TaskMap map[string]fi.Task
 }
 
-func RunUpdateCluster(f *util.Factory, clusterName string, out io.Writer, c *UpdateClusterOptions) (*UpdateClusterResults, error) {
+func RunUpdateCluster(ctx context.Context, f *util.Factory, clusterName string, out io.Writer, c *UpdateClusterOptions) (*UpdateClusterResults, error) {
 	results := &UpdateClusterResults{}
 
 	isDryrun := false
 	targetName := c.Target
+
+	if c.admin && c.user != "" {
+		return nil, fmt.Errorf("cannot use both --admin and --user")
+	}
+
+	if c.CreateKubecfg && !c.admin && c.user == "" {
+		return nil, fmt.Errorf("--create-kube-config requires that either --admin or --user is set")
+	}
+
+	if c.admin && !c.CreateKubecfg {
+		klog.Info("--admin implies --create-kube-config")
+		c.CreateKubecfg = true
+	}
+
+	if c.user != "" && !c.CreateKubecfg {
+		klog.Info("--user implies --create-kube-config")
+		c.CreateKubecfg = true
+	}
 
 	// direct requires --yes (others do not, because they don't do anything!)
 	if c.Target == cloudup.TargetDirect {
@@ -157,7 +181,7 @@ func RunUpdateCluster(f *util.Factory, clusterName string, out io.Writer, c *Upd
 		}
 	}
 
-	cluster, err := GetCluster(f, clusterName)
+	cluster, err := GetCluster(ctx, f, clusterName)
 	if err != nil {
 		return results, err
 	}
@@ -219,7 +243,7 @@ func RunUpdateCluster(f *util.Factory, clusterName string, out io.Writer, c *Upd
 	for _, override := range c.LifecycleOverrides {
 		values := strings.Split(override, "=")
 		if len(values) != 2 {
-			return results, fmt.Errorf("Incorrect syntax for lifecyle-overrides, correct syntax is TaskName=lifecycleName, override provided: %q", override)
+			return results, fmt.Errorf("incorrect syntax for lifecyle-overrides, correct syntax is TaskName=lifecycleName, override provided: %q", override)
 		}
 
 		taskName := values[0]
@@ -233,31 +257,19 @@ func RunUpdateCluster(f *util.Factory, clusterName string, out io.Writer, c *Upd
 		lifecycleOverrideMap[taskName] = lifecycleOverride
 	}
 
-	var instanceGroups []*kops.InstanceGroup
-	{
-		list, err := clientset.InstanceGroupsFor(cluster).List(metav1.ListOptions{})
-		if err != nil {
-			return nil, err
-		}
-		for i := range list.Items {
-			instanceGroups = append(instanceGroups, &list.Items[i])
-		}
-	}
-
 	applyCmd := &cloudup.ApplyClusterCmd{
 		Clientset:          clientset,
 		Cluster:            cluster,
 		DryRun:             isDryrun,
-		InstanceGroups:     instanceGroups,
+		AllowKopsDowngrade: c.AllowKopsDowngrade,
 		RunTasksOptions:    &c.RunTasksOptions,
-		Models:             strings.Split(c.Models, ","),
 		OutDir:             c.OutDir,
 		Phase:              phase,
 		TargetName:         targetName,
 		LifecycleOverrides: lifecycleOverrideMap,
 	}
 
-	if err := applyCmd.Run(); err != nil {
+	if err := applyCmd.Run(ctx); err != nil {
 		return results, err
 	}
 
@@ -292,10 +304,11 @@ func RunUpdateCluster(f *util.Factory, clusterName string, out io.Writer, c *Upd
 		}
 		if kubecfgCert != nil {
 			klog.Infof("Exporting kubecfg for cluster")
-			conf, err := kubeconfig.BuildKubecfg(cluster, keyStore, secretStore, &commands.CloudDiscoveryStatusStore{}, clientcmd.NewDefaultPathOptions())
+			conf, err := kubeconfig.BuildKubecfg(cluster, keyStore, secretStore, &commands.CloudDiscoveryStatusStore{}, clientcmd.NewDefaultPathOptions(), c.admin, c.user)
 			if err != nil {
 				return nil, err
 			}
+
 			err = conf.WriteKubecfg()
 			if err != nil {
 				return nil, err
@@ -344,20 +357,20 @@ func RunUpdateCluster(f *util.Factory, clusterName string, out io.Writer, c *Upd
 		// More suggestions on first run
 		if firstRun {
 			fmt.Fprintf(sb, "Suggestions:\n")
-			fmt.Fprintf(sb, " * validate cluster: kops validate cluster\n")
+			fmt.Fprintf(sb, " * validate cluster: kops validate cluster --wait 10m\n")
 			fmt.Fprintf(sb, " * list nodes: kubectl get nodes --show-labels\n")
-			if !usesBastion(instanceGroups) {
-				fmt.Fprintf(sb, " * ssh to the master: ssh -i ~/.ssh/id_rsa admin@%s\n", cluster.Spec.MasterPublicName)
+			if !usesBastion(applyCmd.InstanceGroups) {
+				fmt.Fprintf(sb, " * ssh to the master: ssh -i ~/.ssh/id_rsa ubuntu@%s\n", cluster.Spec.MasterPublicName)
 			} else {
 				bastionPublicName := findBastionPublicName(cluster)
 				if bastionPublicName != "" {
-					fmt.Fprintf(sb, " * ssh to the bastion: ssh -A -i ~/.ssh/id_rsa admin@%s\n", bastionPublicName)
+					fmt.Fprintf(sb, " * ssh to the bastion: ssh -A -i ~/.ssh/id_rsa ubuntu@%s\n", bastionPublicName)
 				} else {
 					fmt.Fprintf(sb, " * to ssh to the bastion, you probably want to configure a bastionPublicName.\n")
 				}
 			}
-			fmt.Fprintf(sb, " * the admin user is specific to Debian. If not using Debian please use the appropriate user based on your OS.\n")
-			fmt.Fprintf(sb, " * read about installing addons at: https://github.com/kubernetes/kops/blob/master/docs/addons.md.\n")
+			fmt.Fprintf(sb, " * the ubuntu user is specific to Ubuntu. If not using Ubuntu please use the appropriate user based on your OS.\n")
+			fmt.Fprintf(sb, " * read about installing addons at: https://kops.sigs.k8s.io/operations/addons.\n")
 			fmt.Fprintf(sb, "\n")
 		}
 

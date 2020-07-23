@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -57,12 +57,7 @@ func (b *EtcdManagerOptionsBuilder) BuildOptions(o interface{}) error {
 		}
 
 		if etcdCluster.Version == "" {
-			if b.IsKubernetesGTE("1.11") {
-				etcdCluster.Version = "3.2.18"
-			} else {
-				// Preserve existing default etcd version
-				etcdCluster.Version = "2.2.1"
-			}
+			etcdCluster.Version = "3.2.18"
 		}
 
 		if !etcdVersionIsSupported(etcdCluster.Version) {
@@ -79,7 +74,7 @@ func (b *EtcdManagerOptionsBuilder) BuildOptions(o interface{}) error {
 	return nil
 }
 
-var supportedEtcdVersions = []string{"2.2.1", "3.1.12", "3.2.18", "3.2.24", "3.3.10", "3.3.13"}
+var supportedEtcdVersions = []string{"2.2.1", "3.1.12", "3.2.18", "3.2.24", "3.3.10", "3.3.13", "3.3.17", "3.4.3"}
 
 func etcdVersionIsSupported(version string) bool {
 	version = strings.TrimPrefix(version, "v")

@@ -7,6 +7,7 @@ go_library(
         "channel.go",
         "cluster.go",
         "componentconfig.go",
+        "containerdconfig.go",
         "doc.go",
         "dockerconfig.go",
         "instancegroup.go",
@@ -26,11 +27,12 @@ go_library(
         "//pkg/apis/kops/util:go_default_library",
         "//upup/pkg/fi/utils:go_default_library",
         "//util/pkg/vfs:go_default_library",
-        "//vendor/github.com/blang/semver:go_default_library",
+        "//vendor/github.com/blang/semver/v4:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/runtime:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/runtime/schema:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/intstr:go_default_library",
         "//vendor/k8s.io/klog:go_default_library",
     ],
 )
@@ -42,5 +44,9 @@ go_test(
         "semver_test.go",
     ],
     embed = [":go_default_library"],
-    deps = ["//vendor/github.com/blang/semver:go_default_library"],
+    deps = [
+        "//upup/pkg/fi/utils:go_default_library",
+        "//vendor/github.com/blang/semver/v4:go_default_library",
+        "//vendor/gopkg.in/inf.v0:go_default_library",
+    ],
 )

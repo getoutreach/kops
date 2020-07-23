@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,9 +20,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/nodeup"
-	"k8s.io/kops/pkg/testutils"
+	"k8s.io/kops/pkg/testutils/golden"
+	"k8s.io/kops/upup/pkg/fi"
+	"k8s.io/kops/util/pkg/architectures"
 )
 
 func Test_ProxyFunc(t *testing.T) {
@@ -50,6 +54,14 @@ func Test_ProxyFunc(t *testing.T) {
 	if !strings.Contains(script, "no_proxy="+ps.ProxyExcludes) {
 		t.Fatalf("script not setting no_proxy properly")
 	}
+}
+
+type nodeupConfigBuilder struct {
+	cluster *kops.Cluster
+}
+
+func (n *nodeupConfigBuilder) BuildConfig(ig *kops.InstanceGroup, apiserverAdditionalIPs []string) (*nodeup.Config, error) {
+	return nodeup.NewConfig(n.cluster, ig), nil
 }
 
 func TestBootstrapUserData(t *testing.T) {
@@ -112,28 +124,31 @@ func TestBootstrapUserData(t *testing.T) {
 	for i, x := range cs {
 		cluster := makeTestCluster(x.HookSpecRoles, x.FileAssetSpecRoles)
 		group := makeTestInstanceGroup(x.Role, x.HookSpecRoles, x.FileAssetSpecRoles)
-
-		renderNodeUpConfig := func(ig *kops.InstanceGroup) (*nodeup.Config, error) {
-			return &nodeup.Config{}, nil
+		c := &fi.ModelBuilderContext{
+			Tasks: make(map[string]fi.Task),
 		}
 
-		bs := &BootstrapScript{
-			NodeUpSource:        "NUSource",
-			NodeUpSourceHash:    "NUSHash",
-			NodeUpConfigBuilder: renderNodeUpConfig,
+		bs := &BootstrapScriptBuilder{
+			NodeUpConfigBuilder: &nodeupConfigBuilder{cluster: cluster},
+			NodeUpSource: map[architectures.Architecture]string{
+				architectures.ArchitectureAmd64: "NUSourceAmd64",
+				architectures.ArchitectureArm64: "NUSourceArm64",
+			},
+			NodeUpSourceHash: map[architectures.Architecture]string{
+				architectures.ArchitectureAmd64: "NUSHashAmd64",
+				architectures.ArchitectureArm64: "NUSHashArm64",
+			},
 		}
 
-		// Purposely running this twice to cover issue #3516
-		_, err := bs.ResourceNodeUp(group, cluster)
+		res, err := bs.ResourceNodeUp(c, group)
 		if err != nil {
 			t.Errorf("case %d failed to create nodeup resource. error: %s", i, err)
 			continue
 		}
-		res, err := bs.ResourceNodeUp(group, cluster)
-		if err != nil {
-			t.Errorf("case %d failed to create nodeup resource. error: %s", i, err)
-			continue
-		}
+
+		require.Contains(t, c.Tasks, "BootstrapScript/testIG")
+		err = c.Tasks["BootstrapScript/testIG"].Run(&fi.Context{Cluster: cluster})
+		require.NoError(t, err, "running task")
 
 		actual, err := res.AsString()
 		if err != nil {
@@ -141,7 +156,7 @@ func TestBootstrapUserData(t *testing.T) {
 			continue
 		}
 
-		testutils.AssertMatchesFile(t, actual, x.ExpectedFilePath)
+		golden.AssertMatchesFile(t, actual, x.ExpectedFilePath)
 	}
 }
 
@@ -180,6 +195,10 @@ func makeTestCluster(hookSpecRoles []kops.InstanceGroupRole, fileAssetSpecRoles 
 			NetworkCIDR: "10.79.0.0/24",
 			CloudConfig: &kops.CloudConfiguration{
 				NodeTags: s("something"),
+			},
+			ContainerRuntime: "docker",
+			Containerd: &kops.ContainerdConfig{
+				LogLevel: s("info"),
 			},
 			Docker: &kops.DockerConfig{
 				LogLevel: s("INFO"),
@@ -241,6 +260,9 @@ func makeTestCluster(hookSpecRoles []kops.InstanceGroupRole, fileAssetSpecRoles 
 
 func makeTestInstanceGroup(role kops.InstanceGroupRole, hookSpecRoles []kops.InstanceGroupRole, fileAssetSpecRoles []kops.InstanceGroupRole) *kops.InstanceGroup {
 	return &kops.InstanceGroup{
+		ObjectMeta: v1.ObjectMeta{
+			Name: "testIG",
+		},
 		Spec: kops.InstanceGroupSpec{
 			Kubelet: &kops.KubeletConfigSpec{
 				KubeconfigPath: "/etc/kubernetes/igconfig.txt",

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package watchers
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -67,11 +68,13 @@ func (c *ServiceController) Run() {
 
 func (c *ServiceController) runWatcher(stopCh <-chan struct{}) {
 	runOnce := func() (bool, error) {
+		ctx := context.TODO()
+
 		var listOpts metav1.ListOptions
 		klog.V(4).Infof("querying without label filter")
 
 		allKeys := c.scope.AllKeys()
-		serviceList, err := c.client.CoreV1().Services(c.namespace).List(listOpts)
+		serviceList, err := c.client.CoreV1().Services(c.namespace).List(ctx, listOpts)
 		if err != nil {
 			return false, fmt.Errorf("error listing services: %v", err)
 		}
@@ -93,7 +96,7 @@ func (c *ServiceController) runWatcher(stopCh <-chan struct{}) {
 
 		listOpts.Watch = true
 		listOpts.ResourceVersion = serviceList.ResourceVersion
-		watcher, err := c.client.CoreV1().Services(c.namespace).Watch(listOpts)
+		watcher, err := c.client.CoreV1().Services(c.namespace).Watch(ctx, listOpts)
 		if err != nil {
 			return false, fmt.Errorf("error watching services: %v", err)
 		}
@@ -203,8 +206,7 @@ func (c *ServiceController) updateServiceRecords(service *v1.Service) string {
 
 			fqdn := dns.EnsureDotSuffix(token)
 			for _, ingress := range ingresses {
-				var r dns.Record
-				r = ingress
+				r := ingress
 				r.FQDN = fqdn
 				records = append(records, r)
 			}

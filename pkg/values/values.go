@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -83,7 +83,7 @@ func Uint64Value(v *uint64) uint64 {
 	return *v
 }
 
-func DebugAsJsonString(v interface{}) string {
+func DebugAsJSONString(v interface{}) string {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Sprintf("error marshaling: %v", err)

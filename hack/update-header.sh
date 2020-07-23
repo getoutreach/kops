@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2016 The Kubernetes Authors.
+# Copyright 2019 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,12 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-. $(dirname "${BASH_SOURCE}")/common.sh
+. "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-BAD_HEADERS=$((${KUBE_ROOT}/hack/verify-boilerplate.sh || true) | awk '{ print $7}')
-FORMATS="sh go Makefile Dockerfile"
+BAD_HEADERS=$((${KOPS_ROOT}/hack/verify-boilerplate.sh || true) | awk '{ print $7}')
+FORMATS="sh go Makefile Dockerfile py"
 
-YEAR=`date +%Y`
+YEAR=`date -u +%Y`
 
 for i in ${FORMATS}
 do
@@ -27,7 +27,7 @@ do
 	for j in ${BAD_HEADERS}
 	do
 		:
-	        HEADER=$(cat ${KUBE_ROOT}/hack/boilerplate/boilerplate.${i}.txt | sed "s/YEAR/${YEAR}/")
+	        HEADER=$(cat ${KOPS_ROOT}/hack/boilerplate/boilerplate.${i}.txt | sed "s/YEAR/${YEAR}/")
 			value=$(<${j})
 			if [[ "$j" != *$i ]]
             then

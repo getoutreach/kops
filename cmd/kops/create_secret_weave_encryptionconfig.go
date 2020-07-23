@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,8 +26,8 @@ import (
 
 	"k8s.io/kops/cmd/kops/util"
 	"k8s.io/kops/upup/pkg/fi"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -47,7 +48,7 @@ var (
 		--name k8s-cluster.example.com --state s3://example.com
 	# Install a specific weave password via stdin.
 	kops create secret weavepassword -f - \
-		--name k8s-cluster.example.com --state s3://example.com	
+		--name k8s-cluster.example.com --state s3://example.com
 	# Replace an existing weavepassword secret.
 	kops create secret weavepassword -f /path/to/weavepassword --force \
 		--name k8s-cluster.example.com --state s3://example.com
@@ -71,6 +72,7 @@ func NewCmdCreateSecretWeaveEncryptionConfig(f *util.Factory, out io.Writer) *co
 		Long:    createSecretWeaveEncryptionconfigLong,
 		Example: createSecretWeaveEncryptionconfigExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
 
 			err := rootCommand.ProcessArgs(args[0:])
 			if err != nil {
@@ -79,7 +81,7 @@ func NewCmdCreateSecretWeaveEncryptionConfig(f *util.Factory, out io.Writer) *co
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err = RunCreateSecretWeaveEncryptionConfig(f, options)
+			err = RunCreateSecretWeaveEncryptionConfig(ctx, f, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -92,14 +94,14 @@ func NewCmdCreateSecretWeaveEncryptionConfig(f *util.Factory, out io.Writer) *co
 	return cmd
 }
 
-func RunCreateSecretWeaveEncryptionConfig(f *util.Factory, options *CreateSecretWeaveEncryptionConfigOptions) error {
+func RunCreateSecretWeaveEncryptionConfig(ctx context.Context, f *util.Factory, options *CreateSecretWeaveEncryptionConfigOptions) error {
 
 	secret, err := fi.CreateSecret()
 	if err != nil {
 		return fmt.Errorf("error creating encryption secret: %v", err)
 	}
 
-	cluster, err := GetCluster(f, options.ClusterName)
+	cluster, err := GetCluster(ctx, f, options.ClusterName)
 	if err != nil {
 		return err
 	}

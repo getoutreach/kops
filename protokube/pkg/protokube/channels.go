@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ func applyChannel(channel string) error {
 }
 
 func execChannels(args ...string) (string, error) {
-	kubectlPath := "channels" // Assume in PATH
+	kubectlPath := "/channels"
 	cmd := exec.Command(kubectlPath, args...)
 	env := os.Environ()
 	cmd.Env = env

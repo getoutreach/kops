@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -79,6 +79,7 @@ func TestElasticIPCreate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error building context: %v", err)
 		}
+		defer context.Close()
 
 		if err := context.RunTasks(testRunTasksOptions); err != nil {
 			t.Fatalf("unexpected error during Run: %v", err)
@@ -121,6 +122,7 @@ func checkNoChanges(t *testing.T, cloud fi.Cloud, allTasks map[string]fi.Task) {
 	if err != nil {
 		t.Fatalf("error building context: %v", err)
 	}
+	defer context.Close()
 
 	if err := context.RunTasks(testRunTasksOptions); err != nil {
 		t.Fatalf("unexpected error during Run: %v", err)

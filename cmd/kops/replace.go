@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,23 +17,24 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/cli-runtime/pkg/genericclioptions/resource"
 	"k8s.io/klog"
 	"k8s.io/kops/cmd/kops/util"
 	kopsapi "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/commands"
+	"k8s.io/kops/pkg/featureflag"
 	"k8s.io/kops/pkg/kopscodecs"
 	"k8s.io/kops/util/pkg/text"
 	"k8s.io/kops/util/pkg/vfs"
-	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	cmdutil "k8s.io/kubectl/pkg/cmd/util"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -46,7 +47,7 @@ var (
 
 		# Replace an instancegroup using YAML passed into stdin.
 		cat instancegroup.yaml | kops replace -f -
-		
+
 		# Note, if the resource does not exist the command will error, use --force to provision resource
 		kops replace -f my-cluster.yaml --force
 		`))
@@ -56,8 +57,8 @@ var (
 
 // replaceOptions is the options for the command
 type replaceOptions struct {
-	// FilenameOptions is a list of files containing resources
-	resource.FilenameOptions
+	// Filenames is a list of files containing resources
+	Filenames []string
 	// create any resources not found - we limit to instance groups only for now
 	force bool
 }
@@ -72,12 +73,13 @@ func NewCmdReplace(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    replaceLong,
 		Example: replaceExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
 			if len(options.Filenames) == 0 {
 				cmd.Help()
 				return
 			}
 
-			cmdutil.CheckErr(RunReplace(f, cmd, out, options))
+			cmdutil.CheckErr(RunReplace(ctx, f, cmd, out, options))
 		},
 	}
 	cmd.Flags().StringSliceVarP(&options.Filenames, "filename", "f", options.Filenames, "A list of one or more files separated by a comma.")
@@ -88,7 +90,7 @@ func NewCmdReplace(f *util.Factory, out io.Writer) *cobra.Command {
 }
 
 // RunReplace processes the replace command
-func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOptions) error {
+func RunReplace(ctx context.Context, f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOptions) error {
 	clientset, err := f.Clientset()
 	if err != nil {
 		return err
@@ -118,6 +120,9 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 			switch v := o.(type) {
 			case *kopsapi.Cluster:
 				{
+					if v.Spec.ExternalCloudControllerManager != nil && !featureflag.EnableExternalCloudController.Enabled() {
+						klog.Warningf("Without setting the feature flag `+EnableExternalCloudController` the external cloud controller manager configuration will be discarded")
+					}
 					// Retrieve the current status of the cluster.  This will eventually be part of the cluster object.
 					statusDiscovery := &commands.CloudDiscoveryStatusStore{}
 					status, err := statusDiscovery.FindClusterStatus(v)
@@ -127,7 +132,7 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 
 					// Check if the cluster exists already
 					clusterName := v.Name
-					cluster, err := clientset.GetCluster(clusterName)
+					cluster, err := clientset.GetCluster(ctx, clusterName)
 					if err != nil {
 						if errors.IsNotFound(err) {
 							cluster = nil
@@ -139,12 +144,12 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 						if !c.force {
 							return fmt.Errorf("cluster %v does not exist (try adding --force flag)", clusterName)
 						}
-						_, err = clientset.CreateCluster(v)
+						_, err = clientset.CreateCluster(ctx, v)
 						if err != nil {
 							return fmt.Errorf("error creating cluster: %v", err)
 						}
 					} else {
-						_, err = clientset.UpdateCluster(v, status)
+						_, err = clientset.UpdateCluster(ctx, v, status)
 						if err != nil {
 							return fmt.Errorf("error replacing cluster: %v", err)
 						}
@@ -156,7 +161,7 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 				if clusterName == "" {
 					return fmt.Errorf("must specify %q label with cluster name to replace instanceGroup", kopsapi.LabelClusterName)
 				}
-				cluster, err := clientset.GetCluster(clusterName)
+				cluster, err := clientset.GetCluster(ctx, clusterName)
 				if err != nil {
 					if errors.IsNotFound(err) {
 						return fmt.Errorf("cluster %q not found", clusterName)
@@ -165,7 +170,7 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 				}
 				// check if the instancegroup exists already
 				igName := v.ObjectMeta.Name
-				ig, err := clientset.InstanceGroupsFor(cluster).Get(igName, metav1.GetOptions{})
+				ig, err := clientset.InstanceGroupsFor(cluster).Get(ctx, igName, metav1.GetOptions{})
 				if err != nil {
 					if errors.IsNotFound(err) {
 						if !c.force {
@@ -178,12 +183,12 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 				switch ig {
 				case nil:
 					klog.Infof("instanceGroup: %v was not found, creating resource now", igName)
-					_, err = clientset.InstanceGroupsFor(cluster).Create(v)
+					_, err = clientset.InstanceGroupsFor(cluster).Create(ctx, v, metav1.CreateOptions{})
 					if err != nil {
 						return fmt.Errorf("error creating instanceGroup: %v", err)
 					}
 				default:
-					_, err = clientset.InstanceGroupsFor(cluster).Update(v)
+					_, err = clientset.InstanceGroupsFor(cluster).Update(ctx, v, metav1.UpdateOptions{})
 					if err != nil {
 						return fmt.Errorf("error replacing instanceGroup: %v", err)
 					}
@@ -197,7 +202,7 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 					return fmt.Errorf("spec.PublicKey is required")
 				}
 
-				cluster, err := clientset.GetCluster(clusterName)
+				cluster, err := clientset.GetCluster(ctx, clusterName)
 				if err != nil {
 					return err
 				}
@@ -214,7 +219,7 @@ func RunReplace(f *util.Factory, cmd *cobra.Command, out io.Writer, c *replaceOp
 				}
 			default:
 				klog.V(2).Infof("Type of object was %T", v)
-				return fmt.Errorf("Unhandled kind %q in %q", gvk, f)
+				return fmt.Errorf("unhandled kind %q in %q", gvk, f)
 			}
 		}
 	}

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2016 The Kubernetes Authors.
+# Copyright 2019 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,26 +18,27 @@
 
 . $(dirname "${BASH_SOURCE}")/common.sh
 
-WORK_DIR=`mktemp -d`
+WORK_DIR=$(mktemp -d)
 
 cleanup() {
-  rm -rf "$WORK_DIR"
+  chmod -R +w "${WORK_DIR}"
+  rm -rf "${WORK_DIR}"
 }
 trap cleanup EXIT
 
-mkdir -p ${WORK_DIR}/go/
-ln -s ${GOPATH}/src/k8s.io/kops/vendor/ ${WORK_DIR}/go/src
+mkdir -p "${WORK_DIR}/go/"
+cp -R "${GOPATH}/src/k8s.io/kops/vendor/" "${WORK_DIR}/go/src"
 
 unset GOBIN
-GOPATH=${WORK_DIR}/go/ go install -v k8s.io/code-generator/cmd/conversion-gen/
-cp ${WORK_DIR}/go/bin/conversion-gen ${GOPATH}/bin/
 
-GOPATH=${WORK_DIR}/go/ go install k8s.io/code-generator/cmd/deepcopy-gen/
-cp ${WORK_DIR}/go/bin/deepcopy-gen ${GOPATH}/bin/
+env GOBIN="${WORK_DIR}/go/bin" GOPATH="${WORK_DIR}/go/" go install -mod=mod -v k8s.io/code-generator/cmd/conversion-gen/
+cp "${WORK_DIR}/go/bin/conversion-gen" "${GOPATH}/bin/"
 
-GOPATH=${WORK_DIR}/go/ go install k8s.io/code-generator/cmd/defaulter-gen/
-cp ${WORK_DIR}/go/bin/defaulter-gen ${GOPATH}/bin/
+env GOBIN="${WORK_DIR}/go/bin" GOPATH="${WORK_DIR}/go/" go install -mod=mod k8s.io/code-generator/cmd/deepcopy-gen/
+cp "${WORK_DIR}/go/bin/deepcopy-gen" "${GOPATH}/bin/"
 
-GOPATH=${WORK_DIR}/go/ go install k8s.io/code-generator/cmd/client-gen/
-cp ${WORK_DIR}/go/bin/client-gen ${GOPATH}/bin/
+env GOBIN="${WORK_DIR}/go/bin" GOPATH="${WORK_DIR}/go/" go install -mod=mod k8s.io/code-generator/cmd/defaulter-gen/
+cp "${WORK_DIR}/go/bin/defaulter-gen" "${GOPATH}/bin/"
 
+env GOBIN="${WORK_DIR}/go/bin" GOPATH="${WORK_DIR}/go/" go install -mod=mod k8s.io/code-generator/cmd/client-gen/
+cp "${WORK_DIR}/go/bin/client-gen" "${GOPATH}/bin/"

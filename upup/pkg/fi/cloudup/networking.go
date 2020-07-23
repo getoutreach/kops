@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,93 +22,12 @@ import (
 	"os"
 
 	"k8s.io/klog"
-	api "k8s.io/kops/pkg/apis/kops"
+	kopsapi "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/kops/util"
 	"k8s.io/kops/pkg/assets"
+	"k8s.io/kops/util/pkg/architectures"
 	"k8s.io/kops/util/pkg/hashing"
 )
-
-func usesCNI(c *api.Cluster) bool {
-	networkConfig := c.Spec.Networking
-	if networkConfig == nil || networkConfig.Classic != nil {
-		// classic
-		return false
-	}
-
-	if networkConfig.Kubenet != nil {
-		// kubenet is now configured via CNI
-		return true
-	}
-
-	if networkConfig.GCE != nil {
-		// GCE is kubenet at the node level
-		return true
-	}
-
-	if networkConfig.External != nil {
-		// external: assume uses CNI
-		return true
-	}
-
-	if networkConfig.Kopeio != nil {
-		// Kopeio uses kubenet (and thus CNI)
-		return true
-	}
-
-	if networkConfig.Weave != nil {
-		//  Weave uses CNI
-		return true
-	}
-
-	if networkConfig.Flannel != nil {
-		//  Flannel uses CNI
-		return true
-	}
-
-	if networkConfig.Calico != nil {
-		//  Calico uses CNI
-		return true
-	}
-
-	if networkConfig.Canal != nil {
-		// Canal uses CNI
-		return true
-	}
-
-	if networkConfig.Kuberouter != nil {
-		// Kuberouter uses CNI
-		return true
-	}
-
-	if networkConfig.Romana != nil {
-		//  Romana uses CNI
-		return true
-	}
-
-	if networkConfig.AmazonVPC != nil {
-		//  AmazonVPC uses CNI
-		return true
-	}
-
-	if networkConfig.Cilium != nil {
-		// Cilium uses CNI
-		return true
-	}
-
-	if networkConfig.CNI != nil {
-		// CNI definitely uses CNI!
-		return true
-	}
-
-	if networkConfig.LyftVPC != nil {
-		// LyftVPC uses CNI
-		return true
-	}
-
-	// Assume other modes also use CNI
-	klog.Warningf("Unknown networking mode configured")
-	return true
-}
 
 // TODO: we really need to sort this out:
 // https://github.com/kubernetes/kops/issues/724
@@ -116,28 +35,24 @@ func usesCNI(c *api.Cluster) bool {
 // https://github.com/kubernetes/kubernetes/issues/30338
 
 const (
-	// 1.5.x k8s uses release 07a8a28637e97b22eb8dfe710eeae1344f69d16e
-	defaultCNIAssetK8s1_5           = "https://storage.googleapis.com/kubernetes-release/network-plugins/cni-07a8a28637e97b22eb8dfe710eeae1344f69d16e.tar.gz"
-	defaultCNIAssetHashStringK8s1_5 = "19d49f7b2b99cd2493d5ae0ace896c64e289ccbb"
+	// defaultCNIAssetAmd64K8s_11 is the CNI tarball for k8s >= 1.11
+	defaultCNIAssetAmd64K8s_11              = "https://storage.googleapis.com/kubernetes-release/network-plugins/cni-plugins-amd64-v0.7.5.tgz"
+	defaultCNIAssetAmd64SHA256StringK8s1_11 = "3ca15c0a18ee830520cf3a95408be826cbd255a1535a38e0be9608b25ad8bf64"
+	defaultCNIAssetArm64K8s_11              = "https://storage.googleapis.com/kubernetes-release/network-plugins/cni-plugins-arm64-v0.7.5.tgz"
+	defaultCNIAssetArm64SHA256StringK8s1_11 = "7fec91af78e9548df306f0ec43bea527c8c10cc3a9682c33e971c8522a7fcded"
 
-	// 1.6.x k8s uses release 0799f5732f2a11b329d9e3d51b9c8f2e3759f2ff
-	defaultCNIAssetK8s1_6           = "https://storage.googleapis.com/kubernetes-release/network-plugins/cni-0799f5732f2a11b329d9e3d51b9c8f2e3759f2ff.tar.gz"
-	defaultCNIAssetHashStringK8s1_6 = "1d9788b0f5420e1a219aad2cb8681823fc515e7c"
-
-	// defaultCNIAssetK8s1_9 is the CNI tarball for 1.9.x k8s.
-	defaultCNIAssetK8s1_9           = "https://storage.googleapis.com/kubernetes-release/network-plugins/cni-plugins-amd64-v0.6.0.tgz"
-	defaultCNIAssetHashStringK8s1_9 = "d595d3ded6499a64e8dac02466e2f5f2ce257c9f"
-
-	// defaultCNIAssetK8s1_11 is the CNI tarball for k8s >= 1.11
-	defaultCNIAssetK8s1_11           = "https://storage.googleapis.com/kubernetes-release/network-plugins/cni-plugins-amd64-v0.7.5.tgz"
-	defaultCNIAssetHashStringK8s1_11 = "52e9d2de8a5f927307d9397308735658ee44ab8d"
+	// defaultCNIAssetAmd64K8s_15 is the CNI tarball for k8s >= 1.15
+	defaultCNIAssetAmd64K8s_15              = "https://storage.googleapis.com/k8s-artifacts-cni/release/v0.8.6/cni-plugins-linux-amd64-v0.8.6.tgz"
+	defaultCNIAssetAmd64SHA256StringK8s1_15 = "994fbfcdbb2eedcfa87e48d8edb9bb365f4e2747a7e47658482556c12fd9b2f5"
+	defaultCNIAssetArm64K8s_15              = "https://storage.googleapis.com/k8s-artifacts-cni/release/v0.8.6/cni-plugins-linux-arm64-v0.8.6.tgz"
+	defaultCNIAssetArm64SHA256StringK8s1_15 = "43fbf750c5eccb10accffeeb092693c32b236fb25d919cf058c91a677822c999"
 
 	// Environment variable for overriding CNI url
 	ENV_VAR_CNI_VERSION_URL       = "CNI_VERSION_URL"
 	ENV_VAR_CNI_ASSET_HASH_STRING = "CNI_ASSET_HASH_STRING"
 )
 
-func findCNIAssets(c *api.Cluster, assetBuilder *assets.AssetBuilder) (*url.URL, *hashing.Hash, error) {
+func findCNIAssets(c *kopsapi.Cluster, assetBuilder *assets.AssetBuilder, arch architectures.Architecture) (*url.URL, *hashing.Hash, error) {
 
 	if cniVersionURL := os.Getenv(ENV_VAR_CNI_VERSION_URL); cniVersionURL != "" {
 		u, err := url.Parse(cniVersionURL)
@@ -156,9 +71,8 @@ func findCNIAssets(c *api.Cluster, assetBuilder *assets.AssetBuilder) (*url.URL,
 				return nil, nil, fmt.Errorf("unable to parse CNI asset hash %q", cniAssetHashString)
 			}
 			return u, hash, nil
-		} else {
-			return u, nil, nil
 		}
+		return u, nil, nil
 	}
 
 	sv, err := util.ParseKubernetesVersion(c.Spec.KubernetesVersion)
@@ -167,22 +81,27 @@ func findCNIAssets(c *api.Cluster, assetBuilder *assets.AssetBuilder) (*url.URL,
 	}
 
 	var cniAsset, cniAssetHash string
-	if util.IsKubernetesGTE("1.11", *sv) {
-		cniAsset = defaultCNIAssetK8s1_11
-		cniAssetHash = defaultCNIAssetHashStringK8s1_11
-		klog.V(2).Infof("Adding default CNI asset for k8s >= 1.11: %s", defaultCNIAssetK8s1_9)
-	} else if util.IsKubernetesGTE("1.9", *sv) {
-		cniAsset = defaultCNIAssetK8s1_9
-		cniAssetHash = defaultCNIAssetHashStringK8s1_9
-		klog.V(2).Infof("Adding default CNI asset for 1.11 > k8s >= 1.9: %s", defaultCNIAssetK8s1_9)
-	} else if util.IsKubernetesGTE("1.6", *sv) {
-		cniAsset = defaultCNIAssetK8s1_6
-		cniAssetHash = defaultCNIAssetHashStringK8s1_6
-		klog.V(2).Infof("Adding default CNI asset for 1.9 > k8s >= 1.6: %s", defaultCNIAssetK8s1_6)
-	} else {
-		cniAsset = defaultCNIAssetK8s1_5
-		cniAssetHash = defaultCNIAssetHashStringK8s1_5
-		klog.V(2).Infof("Adding default CNI asset for 1.6 > k8s >= 1.5: %s", defaultCNIAssetK8s1_5)
+	switch arch {
+	case architectures.ArchitectureAmd64:
+		if util.IsKubernetesGTE("1.15", *sv) {
+			cniAsset = defaultCNIAssetAmd64K8s_15
+			cniAssetHash = defaultCNIAssetAmd64SHA256StringK8s1_15
+		} else {
+			cniAsset = defaultCNIAssetAmd64K8s_11
+			cniAssetHash = defaultCNIAssetAmd64SHA256StringK8s1_11
+		}
+		klog.V(2).Infof("Adding default ARM64 CNI plugin binaries asset : %s", cniAsset)
+	case architectures.ArchitectureArm64:
+		if util.IsKubernetesGTE("1.15", *sv) {
+			cniAsset = defaultCNIAssetArm64K8s_15
+			cniAssetHash = defaultCNIAssetArm64SHA256StringK8s1_15
+		} else {
+			cniAsset = defaultCNIAssetArm64K8s_11
+			cniAssetHash = defaultCNIAssetArm64SHA256StringK8s1_11
+		}
+		klog.V(2).Infof("Adding default AMD64 CNI plugin binaries asset : %s", cniAsset)
+	default:
+		return nil, nil, fmt.Errorf("unknown arch for CNI plugin binaries asset %s", arch)
 	}
 
 	u, err := url.Parse(cniAsset)
@@ -192,7 +111,7 @@ func findCNIAssets(c *api.Cluster, assetBuilder *assets.AssetBuilder) (*url.URL,
 
 	hash, err := hashing.FromString(cniAssetHash)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse CNI asset hash %q", cniAssetHash)
+		return nil, nil, fmt.Errorf("unable to parse CNI plugin binaries asset hash %q", cniAssetHash)
 	}
 
 	u, err = assetBuilder.RemapFileAndSHAValue(u, cniAssetHash)

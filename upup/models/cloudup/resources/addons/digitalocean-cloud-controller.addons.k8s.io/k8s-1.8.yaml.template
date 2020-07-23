@@ -30,6 +30,7 @@ spec:
       serviceAccountName: cloud-controller-manager
       dnsPolicy: Default
       hostNetwork: true
+      priorityClassName: system-node-critical
       tolerations:
         - key: "node.cloudprovider.kubernetes.io/uninitialized"
           value: "true"
@@ -47,7 +48,7 @@ spec:
           operator: Exists
           tolerationSeconds: 300
       containers:
-      - image: digitalocean/digitalocean-cloud-controller-manager:v0.1.16
+      - image: digitalocean/digitalocean-cloud-controller-manager:v0.1.24
         name: digitalocean-cloud-controller-manager
         command:
           - "/bin/digitalocean-cloud-controller-manager"
@@ -144,6 +145,17 @@ rules:
   - list
   - watch
   - update
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - watch
+  - list
+  - create
+  - update
+  - delete
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1

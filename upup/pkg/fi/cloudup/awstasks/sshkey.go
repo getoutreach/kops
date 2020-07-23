@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -166,8 +166,8 @@ func (_ *SSHKey) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *SSHKey) error {
 }
 
 type terraformSSHKey struct {
-	Name      *string            `json:"key_name"`
-	PublicKey *terraform.Literal `json:"public_key"`
+	Name      *string            `json:"key_name" cty:"key_name"`
+	PublicKey *terraform.Literal `json:"public_key" cty:"public_key"`
 }
 
 func (_ *SSHKey) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *SSHKey) error {
@@ -176,7 +176,7 @@ func (_ *SSHKey) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *SS
 		return nil
 	}
 	tfName := strings.Replace(*e.Name, ":", "", -1)
-	publicKey, err := t.AddFile("aws_key_pair", tfName, "public_key", e.PublicKey)
+	publicKey, err := t.AddFile("aws_key_pair", tfName, "public_key", e.PublicKey, false)
 	if err != nil {
 		return fmt.Errorf("error rendering PublicKey: %v", err)
 	}
@@ -196,6 +196,9 @@ func (e *SSHKey) IsExistingKey() bool {
 }
 
 func (e *SSHKey) TerraformLink() *terraform.Literal {
+	if e.NoSSHKey() {
+		return nil
+	}
 	if e.IsExistingKey() {
 		return terraform.LiteralFromStringValue(*e.Name)
 	}
@@ -204,16 +207,20 @@ func (e *SSHKey) TerraformLink() *terraform.Literal {
 }
 
 func (_ *SSHKey) RenderCloudformation(t *cloudformation.CloudformationTarget, a, e, changes *SSHKey) error {
+	if e.NoSSHKey() {
+		return nil
+	}
+
 	cloud := t.Cloud.(awsup.AWSCloud)
 
 	klog.Warningf("Cloudformation does not manage SSH keys; pre-creating SSH key")
 
-	a, err := e.find(cloud)
+	keypair, err := e.find(cloud)
 	if err != nil {
 		return err
 	}
 
-	if a == nil {
+	if keypair == nil {
 		err := e.createKeypair(cloud)
 		if err != nil {
 			return err
@@ -221,4 +228,8 @@ func (_ *SSHKey) RenderCloudformation(t *cloudformation.CloudformationTarget, a,
 	}
 
 	return nil
+}
+
+func (e *SSHKey) NoSSHKey() bool {
+	return *e == SSHKey{}
 }

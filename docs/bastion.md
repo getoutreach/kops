@@ -34,7 +34,6 @@ You should now be able to edit and configure your bastion instance group.
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: "2017-01-05T13:37:07Z"
   name: bastions
 spec:
   associatePublicIp: true
@@ -71,6 +70,34 @@ spec:
   topology:
     bastion:
       bastionPublicName: bastion.mycluster.example.com
+```
+
+### Additional security groups to ELB
+{{ kops_feature_table(kops_added_default='1.18') }}
+
+If you want to add security groups to the bastion ELB
+
+```yaml
+spec:
+  topology:
+    bastion:
+      bastionPublicName: bastion.mycluster.example.com
+      loadBalancer:
+        additionalSecurityGroups:
+        - "sg-***"
+```
+
+### Access when using gossip
+
+When using [gossip mode](gossip.md), there is no DNS zone where we can configure a
+CNAME for the bastion. Because bastions are fronted with a load
+balancer, you can instead use the endpoint of the load balancer to
+reach your bastion.
+
+On AWS, an easy way to find this DNS name is with kops toolbox:
+
+```
+kops toolbox dump -ojson | grep 'bastion.*elb.amazonaws.com'
 ```
 
 ### Using SSH agent to access your bastion

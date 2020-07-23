@@ -7,9 +7,9 @@ Create a Kubernetes cluster.
 
 ### Synopsis
 
-Create a kubernetes cluster using command line flags. This command creates cloud based resources such as networks and virtual machines. Once the infrastructure is in place Kubernetes is installed on the virtual machines. 
+Create a kubernetes cluster using command line flags. This command creates cloud based resources such as networks and virtual machines. Once the infrastructure is in place Kubernetes is installed on the virtual machines.
 
-These operations are done in parallel and rely on eventual consistency.
+ These operations are done in parallel and rely on eventual consistency.
 
 ```
 kops create cluster [flags]
@@ -18,15 +18,15 @@ kops create cluster [flags]
 ### Examples
 
 ```
-  # Create a cluster in AWS
+  # Create a cluster in AWS in a single zone.
   kops create cluster --name=kubernetes-cluster.example.com \
-  --state=s3://kops-state-1234 --zones=eu-west-1a \
+  --state=s3://kops-state-1234 \
+  --zones=eu-west-1a \
   --node-count=2
   
-  # Create a cluster in AWS that has HA masters.  This cluster
-  # will be setup with an internal networking in a private VPC.
-  # A bastion instance will be setup to provide instance access.
-  
+  # Create a cluster in AWS with HA masters. This cluster
+  # has also been configured for private networking in a kops-managed VPC.
+  # The bastion flag is set to create an entrypoint for admins to SSH.
   export NODE_SIZE=${NODE_SIZE:-m4.large}
   export MASTER_SIZE=${MASTER_SIZE:-m4.large}
   export ZONES=${ZONES:-"us-east-1d,us-east-1b,us-east-1c"}
@@ -37,28 +37,29 @@ kops create cluster [flags]
   --node-size $NODE_SIZE \
   --master-size $MASTER_SIZE \
   --master-zones $ZONES \
-  --networking weave \
+  --networking cilium \
   --topology private \
   --bastion="true" \
   --yes
   
-  # Create cluster in GCE.
-  # This is an alpha feature.
+  # Create a cluster in GCE.
   export KOPS_STATE_STORE="gs://mybucket-kops"
   export ZONES=${MASTER_ZONES:-"us-east1-b,us-east1-c,us-east1-d"}
-  export KOPS_FEATURE_FLAGS=AlphaAllowGCE
-  
-  kops create cluster kubernetes-k8s-gce.example.com
+  export KOPS_FEATURE_FLAGS=AlphaAllowGCE # Note: GCE support is not GA.
+  kops create cluster kubernetes-k8s-gce.example.com \
   --zones $ZONES \
   --master-zones $ZONES \
-  --node-count 3
-  --project my-gce-project \
-  --image "ubuntu-os-cloud/ubuntu-1604-xenial-v20170202" \
+  --node-count 3 \
   --yes
-  # Create manifest for a cluster in AWS
+  
+  # Generate a cluster spec to apply later.
+  # Run the following, then: kops create -f filename.yamlh
   kops create cluster --name=kubernetes-cluster.example.com \
-  --state=s3://kops-state-1234 --zones=eu-west-1a \
-  --node-count=2 --dry-run -oyaml
+  --state=s3://kops-state-1234 \
+  --zones=eu-west-1a \
+  --node-count=2 \
+  --dry-run \
+  -oyaml > filename.yaml
 ```
 
 ### Options
@@ -71,32 +72,42 @@ kops create cluster [flags]
       --authorization string             Authorization mode to use: AlwaysAllow or RBAC (default "RBAC")
       --bastion                          Pass the --bastion flag to enable a bastion instance group. Only applies to private topology.
       --channel string                   Channel for default versions and configuration to use (default "stable")
-      --cloud string                     Cloud provider to use - gce, aws, vsphere, openstack
+      --cloud string                     Cloud provider to use - gce, aws, openstack
       --cloud-labels string              A list of KV pairs used to tag all instance groups in AWS (e.g. "Owner=John Doe,Team=Some Team").
+      --container-runtime string         Container runtime to use: containerd, docker (default "docker")
       --disable-subnet-tags              Set to disable automatic subnet tagging
       --dns string                       DNS hosted zone to use: public|private. (default "Public")
       --dns-zone string                  DNS hosted zone to use (defaults to longest matching zone)
       --dry-run                          If true, only print the object that would be sent, without sending it. This flag can be used to create a cluster YAML or JSON manifest.
       --encrypt-etcd-storage             Generate key in aws kms and use it for encrypt etcd volumes
       --etcd-storage-type string         The default storage type for etc members
+      --gce-service-account string       Service account with which the GCE VM runs. Warning: if not set, VMs will run as default compute service account.
   -h, --help                             help for cluster
-      --image string                     Image to use for all instances.
+      --image string                     Set image for all instances.
       --kubernetes-version string        Version of kubernetes to run (defaults to version in channel)
-      --master-count int32               Set the number of masters.  Defaults to one master per master-zone
+      --master-count int32               Set number of masters. Defaults to one master per master-zone
+      --master-image string              Set image for masters. Takes precedence over --image
       --master-public-name string        Sets the public master public name
       --master-security-groups strings   Add precreated additional security groups to masters.
       --master-size string               Set instance size for masters
       --master-tenancy string            The tenancy of the master group on AWS. Can either be default or dedicated.
       --master-volume-size int32         Set instance volume size (in GB) for masters
       --master-zones strings             Zones in which to run masters (must be an odd number)
-      --model string                     Models to apply (separate multiple models with commas) (default "proto,cloudup")
       --network-cidr string              Set to override the default network CIDR
-      --networking string                Networking mode to use.  kubenet (default), classic, external, kopeio-vxlan (or kopeio), weave, flannel-vxlan (or flannel), flannel-udp, calico, canal, kube-router, romana, amazon-vpc-routed-eni, cilium, cni. (default "kubenet")
-      --node-count int32                 Set the number of nodes
+      --networking string                Networking mode to use.  kubenet, external, weave, flannel-vxlan (or flannel), flannel-udp, calico, canal, kube-router, amazonvpc, cilium, cilium-etcd, cni, lyftvpc. (default "kubenet")
+      --node-count int32                 Set total number of nodes. Defaults to one node per zone
+      --node-image string                Set image for nodes. Takes precedence over --image
       --node-security-groups strings     Add precreated additional security groups to nodes.
       --node-size string                 Set instance size for nodes
       --node-tenancy string              The tenancy of the node group on AWS. Can be either default or dedicated.
       --node-volume-size int32           Set instance volume size (in GB) for nodes
+      --os-dns-servers string            comma separated list of DNS Servers which is used in network
+      --os-ext-net string                The name of the external network to use with the openstack router
+      --os-ext-subnet string             The name of the external floating subnet to use with the openstack router
+      --os-kubelet-ignore-az             If true kubernetes may attach volumes across availability zones
+      --os-lb-floating-subnet string     The name of the external subnet to use with the kubernetes api
+      --os-network string                The ID of the existing OpenStack network to use
+      --os-octavia                       If true octavia loadbalancer api will be used
       --out string                       Path to write any local output
   -o, --output string                    Output format. One of json|yaml. Used with the --dry-run flag.
       --project string                   Project to use (must be set on GCE)
@@ -114,6 +125,7 @@ kops create cluster [flags]
 ### Options inherited from parent commands
 
 ```
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --config string                    yaml config file (default is $HOME/.kops.yaml)
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -123,7 +135,7 @@ kops create cluster [flags]
       --logtostderr                      log to standard error instead of files (default true)
       --name string                      Name of cluster. Overrides KOPS_CLUSTER_NAME environment variable
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --state string                     Location of state storage (kops 'config' file). Overrides KOPS_STATE_STORE environment variable
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
   -v, --v Level                          number for the log level verbosity

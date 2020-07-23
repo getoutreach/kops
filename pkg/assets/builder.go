@@ -17,17 +17,17 @@ limitations under the License.
 package assets
 
 import (
-	"bytes"
 	"fmt"
 	"net/url"
 	"os"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
-
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/kops/util"
 	"k8s.io/kops/pkg/featureflag"
@@ -51,6 +51,20 @@ type AssetBuilder struct {
 
 	// KubernetesVersion is the version of kubernetes we are installing
 	KubernetesVersion semver.Version
+
+	// StaticManifests records static manifests
+	StaticManifests []*StaticManifest
+}
+
+type StaticManifest struct {
+	// Key is the unique identifier of the manifest
+	Key string
+
+	// Path is the path to the manifest
+	Path string
+
+	// The static manifest will only be applied to instances matching the specified role
+	Roles []kops.InstanceGroupRole
 }
 
 // ContainerAsset models a container's location.
@@ -98,27 +112,18 @@ func (a *AssetBuilder) RemapManifest(data []byte) ([]byte, error) {
 		return data, nil
 	}
 
-	manifests, err := kubemanifest.LoadManifestsFrom(data)
+	objects, err := kubemanifest.LoadObjectsFrom(data)
 	if err != nil {
 		return nil, err
 	}
 
-	var yamlSeparator = []byte("\n---\n\n")
-	var remappedManifests [][]byte
-	for _, manifest := range manifests {
-		if err := manifest.RemapImages(a.RemapImage); err != nil {
+	for _, object := range objects {
+		if err := object.RemapImages(a.RemapImage); err != nil {
 			return nil, fmt.Errorf("error remapping images: %v", err)
 		}
-
-		y, err := manifest.ToYAML()
-		if err != nil {
-			return nil, fmt.Errorf("error re-marshaling manifest: %v", err)
-		}
-
-		remappedManifests = append(remappedManifests, y)
 	}
 
-	return bytes.Join(remappedManifests, yamlSeparator), nil
+	return kubemanifest.ToYAML(objects)
 }
 
 // RemapImage normalizes a containers location if a user sets the AssetsLocation ContainerRegistry location.
@@ -126,15 +131,6 @@ func (a *AssetBuilder) RemapImage(image string) (string, error) {
 	asset := &ContainerAsset{}
 
 	asset.DockerImage = image
-
-	// The k8s.gcr.io prefix is an alias, but for CI builds we run from a docker load,
-	// and we only double-tag from 1.10 onwards.
-	// For versions prior to 1.10, remap k8s.gcr.io to the old name.
-	// This also means that we won't start using the aliased names on existing clusters,
-	// which could otherwise be surprising to users.
-	if !util.IsKubernetesGTE("1.10", a.KubernetesVersion) && strings.HasPrefix(image, "k8s.gcr.io/") {
-		image = "gcr.io/google_containers/" + strings.TrimPrefix(image, "k8s.gcr.io/")
-	}
 
 	if strings.HasPrefix(image, "kope/dns-controller:") {
 		// To use user-defined DNS Controller:
@@ -147,8 +143,26 @@ func (a *AssetBuilder) RemapImage(image string) (string, error) {
 		}
 	}
 
+	if strings.HasPrefix(image, "kope/kops-controller:") {
+		// To use user-defined DNS Controller:
+		// 1. DOCKER_REGISTRY=[your docker hub repo] make kops-controller-push
+		// 2. export KOPSCONTROLLER_IMAGE=[your docker hub repo]
+		// 3. make kops and create/apply cluster
+		override := os.Getenv("KOPSCONTROLLER_IMAGE")
+		if override != "" {
+			image = override
+		}
+	}
+
+	if strings.HasPrefix(image, "kope/kube-apiserver-healthcheck:") {
+		override := os.Getenv("KUBE_APISERVER_HEALTHCHECK_IMAGE")
+		if override != "" {
+			image = override
+		}
+	}
+
 	if a.AssetsLocation != nil && a.AssetsLocation.ContainerProxy != nil {
-		containerProxy := strings.TrimRight(*a.AssetsLocation.ContainerProxy, "/")
+		containerProxy := strings.TrimSuffix(*a.AssetsLocation.ContainerProxy, "/")
 		normalized := image
 
 		// If the image name contains only a single / we need to determine if the image is located on docker-hub or if it's using a convenient URL like k8s.gcr.io/<image-name>
@@ -172,11 +186,7 @@ func (a *AssetBuilder) RemapImage(image string) (string, error) {
 		normalized := image
 
 		// Remove the 'standard' kubernetes image prefix, just for sanity
-		if !util.IsKubernetesGTE("1.10", a.KubernetesVersion) && strings.HasPrefix(normalized, "gcr.io/google_containers/") {
-			normalized = strings.TrimPrefix(normalized, "gcr.io/google_containers/")
-		} else {
-			normalized = strings.TrimPrefix(normalized, "k8s.gcr.io/")
-		}
+		normalized = strings.TrimPrefix(normalized, "k8s.gcr.io/")
 
 		// When assembling the cluster spec, kops may call the option more then once until the config converges
 		// This means that this function may me called more than once on the same image
@@ -290,19 +300,40 @@ func (a *AssetBuilder) findHash(file *FileAsset) (*hashing.Hash, error) {
 		return nil, fmt.Errorf("file url is not defined")
 	}
 
-	for _, ext := range []string{".sha1"} {
-		hashURL := u.String() + ext
-		b, err := vfs.Context.ReadFile(hashURL)
-		if err != nil {
-			klog.Infof("error reading hash file %q: %v", hashURL, err)
-			continue
+	// We now prefer sha256 hashes
+	for backoffSteps := 1; backoffSteps <= 3; backoffSteps++ {
+		// We try first with a short backoff, so we don't
+		// waste too much time looking for files that don't
+		// exist before trying the next one
+		backoff := wait.Backoff{
+			Duration: 500 * time.Millisecond,
+			Factor:   2,
+			Steps:    backoffSteps,
 		}
-		hashString := strings.TrimSpace(string(b))
-		klog.V(2).Infof("Found hash %q for %q", hashString, u)
 
-		// Accept a hash string that is `<hash> <filename>`
-		fields := strings.Fields(hashString)
-		return hashing.FromString(fields[0])
+		for _, ext := range []string{".sha256", ".sha1"} {
+			hashURL := u.String() + ext
+			b, err := vfs.Context.ReadFile(hashURL, vfs.WithBackoff(backoff))
+			if err != nil {
+				// Try to log without being too alarming - issue #7550
+				if ext == ".sha256" {
+					klog.V(2).Infof("unable to read new sha256 hash file (is this an older/unsupported kubernetes release?) %q: %v", hashURL, err)
+				} else {
+					klog.V(2).Infof("unable to read hash file %q: %v", hashURL, err)
+				}
+				continue
+			}
+			hashString := strings.TrimSpace(string(b))
+			klog.V(2).Infof("Found hash %q for %q", hashString, u)
+
+			// Accept a hash string that is `<hash> <filename>`
+			fields := strings.Fields(hashString)
+			if len(fields) == 0 {
+				klog.Infof("hash file was empty %q", hashURL)
+				continue
+			}
+			return hashing.FromString(fields[0])
+		}
 	}
 
 	if a.AssetsLocation != nil && a.AssetsLocation.FileRepository != nil {

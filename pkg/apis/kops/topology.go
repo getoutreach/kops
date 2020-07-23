@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,6 +20,16 @@ const (
 	TopologyPublic  = "public"
 	TopologyPrivate = "private"
 )
+
+var SupportedTopologies = []string{
+	TopologyPublic,
+	TopologyPrivate,
+}
+
+var SupportedDnsTypes = []string{
+	string(DNSTypePublic),
+	string(DNSTypePrivate),
+}
 
 type TopologySpec struct {
 	// The environment to launch the Kubernetes masters in public|private

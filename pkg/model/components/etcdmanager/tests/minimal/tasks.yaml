@@ -1,48 +1,44 @@
 Lifecycle: null
 Name: etcd-clients-ca
 Signer: null
-alternateNameTasks: null
 alternateNames: null
-format: v1alpha2
+oldFormat: false
 subject: cn=etcd-clients-ca
 type: ca
 ---
 Lifecycle: null
 Name: etcd-manager-ca-events
 Signer: null
-alternateNameTasks: null
 alternateNames: null
-format: v1alpha2
+oldFormat: false
 subject: cn=etcd-manager-ca-events
 type: ca
 ---
 Lifecycle: null
 Name: etcd-manager-ca-main
 Signer: null
-alternateNameTasks: null
 alternateNames: null
-format: v1alpha2
+oldFormat: false
 subject: cn=etcd-manager-ca-main
 type: ca
 ---
 Lifecycle: null
 Name: etcd-peers-ca-events
 Signer: null
-alternateNameTasks: null
 alternateNames: null
-format: v1alpha2
+oldFormat: false
 subject: cn=etcd-peers-ca-events
 type: ca
 ---
 Lifecycle: null
 Name: etcd-peers-ca-main
 Signer: null
-alternateNameTasks: null
 alternateNames: null
-format: v1alpha2
+oldFormat: false
 subject: cn=etcd-peers-ca-main
 type: ca
 ---
+Base: memfs://clusters.example.com/minimal.example.com/backups/etcd-events
 Contents:
   Name: ""
   Resource: |-
@@ -50,9 +46,10 @@ Contents:
       "memberCount": 1
     }
 Lifecycle: null
-Location: backups/etcd/events/control/etcd-cluster-spec
+Location: /control/etcd-cluster-spec
 Name: etcd-cluster-spec-events
 ---
+Base: memfs://clusters.example.com/minimal.example.com/backups/etcd-main
 Contents:
   Name: ""
   Resource: |-
@@ -60,9 +57,10 @@ Contents:
       "memberCount": 1
     }
 Lifecycle: null
-Location: backups/etcd/main/control/etcd-cluster-spec
+Location: /control/etcd-cluster-spec
 Name: etcd-cluster-spec-main
 ---
+Base: null
 Contents:
   Name: ""
   Resource: |
@@ -89,7 +87,7 @@ Contents:
           --v=6 --volume-name-tag=k8s.io/etcd/events --volume-provider=aws --volume-tag=k8s.io/etcd/events
           --volume-tag=k8s.io/role/master=1 --volume-tag=kubernetes.io/cluster/minimal.example.com=owned
           > /tmp/pipe 2>&1
-        image: kopeio/etcd-manager:3.0.20190801
+        image: kopeio/etcd-manager:3.0.20200531
         name: etcd-manager
         resources:
           requests:
@@ -100,8 +98,6 @@ Contents:
         volumeMounts:
         - mountPath: /rootfs
           name: rootfs
-        - mountPath: /etc/hosts
-          name: hosts
         - mountPath: /etc/kubernetes/pki/etcd-manager
           name: pki
         - mountPath: /var/log/etcd.log
@@ -118,10 +114,6 @@ Contents:
           type: Directory
         name: rootfs
       - hostPath:
-          path: /etc/hosts
-          type: File
-        name: hosts
-      - hostPath:
           path: /etc/kubernetes/pki/etcd-manager-events
           type: DirectoryOrCreate
         name: pki
@@ -134,6 +126,7 @@ Lifecycle: null
 Location: manifests/etcd/events.yaml
 Name: manifests-etcdmanager-events
 ---
+Base: null
 Contents:
   Name: ""
   Resource: |
@@ -160,7 +153,7 @@ Contents:
           --v=6 --volume-name-tag=k8s.io/etcd/main --volume-provider=aws --volume-tag=k8s.io/etcd/main
           --volume-tag=k8s.io/role/master=1 --volume-tag=kubernetes.io/cluster/minimal.example.com=owned
           > /tmp/pipe 2>&1
-        image: kopeio/etcd-manager:3.0.20190801
+        image: kopeio/etcd-manager:3.0.20200531
         name: etcd-manager
         resources:
           requests:
@@ -171,8 +164,6 @@ Contents:
         volumeMounts:
         - mountPath: /rootfs
           name: rootfs
-        - mountPath: /etc/hosts
-          name: hosts
         - mountPath: /etc/kubernetes/pki/etcd-manager
           name: pki
         - mountPath: /var/log/etcd.log
@@ -188,10 +179,6 @@ Contents:
           path: /
           type: Directory
         name: rootfs
-      - hostPath:
-          path: /etc/hosts
-          type: File
-        name: hosts
       - hostPath:
           path: /etc/kubernetes/pki/etcd-manager-main
           type: DirectoryOrCreate

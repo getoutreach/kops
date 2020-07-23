@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
 	api "k8s.io/kops/pkg/apis/kops"
-	"k8s.io/kops/pkg/apis/kops/util"
 	"k8s.io/kops/upup/pkg/fi"
 )
 
@@ -50,13 +49,6 @@ func buildCloudupTags(cluster *api.Cluster) (sets.String, error) {
 		{
 			tags.Insert("_do")
 		}
-	case api.CloudProviderVSphere:
-		{
-			tags.Insert("_vsphere")
-		}
-
-	case api.CloudProviderBareMetal:
-		// No tags
 
 	case api.CloudProviderOpenstack:
 
@@ -68,46 +60,20 @@ func buildCloudupTags(cluster *api.Cluster) (sets.String, error) {
 		return nil, fmt.Errorf("unknown CloudProvider %q", cluster.Spec.CloudProvider)
 	}
 
-	versionTag := ""
-	if cluster.Spec.KubernetesVersion != "" {
-		sv, err := util.ParseKubernetesVersion(cluster.Spec.KubernetesVersion)
-		if err != nil {
-			return nil, fmt.Errorf("unable to determine kubernetes version from %q", cluster.Spec.KubernetesVersion)
-		}
-
-		if sv.Major == 1 && sv.Minor >= 6 {
-			versionTag = "_k8s_1_6"
-		} else if sv.Major == 1 && sv.Minor == 5 {
-			versionTag = "_k8s_1_5"
-		} else if sv.Major == 1 && sv.Minor == 4 {
-			versionTag = "_k8s_1_4"
-		} else {
-			// We don't differentiate between these older versions
-			versionTag = "_k8s_1_3"
-		}
-	}
-	if versionTag == "" {
-		return nil, fmt.Errorf("unable to determine kubernetes version from %q", cluster.Spec.KubernetesVersion)
-	} else {
-		tags.Insert(versionTag)
-	}
+	tags.Insert("_k8s_1_6")
 
 	klog.V(4).Infof("tags: %s", tags.List())
 
 	return tags, nil
 }
 
-func buildNodeupTags(role api.InstanceGroupRole, cluster *api.Cluster, clusterTags sets.String) (sets.String, error) {
+func buildNodeupTags(cluster *api.Cluster, clusterTags sets.String) (sets.String, error) {
 	tags := sets.NewString()
 
 	networking := cluster.Spec.Networking
 
 	if networking == nil {
 		return nil, fmt.Errorf("Networking is not set, and should not be nil here")
-	}
-
-	if networking.LyftVPC != nil {
-		tags.Insert("_lyft_vpc_cni")
 	}
 
 	switch fi.StringValue(cluster.Spec.UpdatePolicy) {

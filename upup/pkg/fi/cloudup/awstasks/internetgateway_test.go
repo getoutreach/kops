@@ -74,6 +74,9 @@ func TestSharedInternetGatewayDoesNotRename(t *testing.T) {
 		InternetGatewayId: internetGateway.InternetGateway.InternetGatewayId,
 		VpcId:             vpc.Vpc.VpcId,
 	})
+	if err != nil {
+		t.Fatalf("error attaching igw: %v", err)
+	}
 
 	// We define a function so we can rebuild the tasks, because we modify in-place when running
 	buildTasks := func() map[string]fi.Task {
@@ -110,6 +113,7 @@ func TestSharedInternetGatewayDoesNotRename(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error building context: %v", err)
 		}
+		defer context.Close()
 
 		if err := context.RunTasks(testRunTasksOptions); err != nil {
 			t.Fatalf("unexpected error during Run: %v", err)

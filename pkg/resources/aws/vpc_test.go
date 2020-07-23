@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ func TestListVPCs(t *testing.T) {
 	h := testutils.NewIntegrationTestHarness(t)
 	defer h.Close()
 
-	h.MockKopsVersion("1.8.1")
+	h.MockKopsVersion("1.19.0-alpha.1")
 	awsCloud := h.SetupMockAWS()
 
 	mockEC2 := awsCloud.EC2().(*mockec2.MockEC2)

@@ -14,20 +14,21 @@
     {
       "Effect": "Allow",
       "Action": [
-        "s3:GetBucketLocation",
-        "s3:GetEncryptionConfiguration",
-        "s3:ListBucket"
+        "s3:*"
       ],
-      "Resource": [
-        "arn:aws:s3:::kops-tests"
-      ]
+      "Resource": "arn:aws:s3:::kops-tests/iam-builder-test.k8s.local/*"
     },
     {
       "Effect": "Allow",
       "Action": [
-        "s3:*"
+        "s3:GetBucketLocation",
+        "s3:GetEncryptionConfiguration",
+        "s3:ListBucket",
+        "s3:ListBucketVersions"
       ],
-      "Resource": "arn:aws:s3:::kops-tests/iam-builder-test.k8s.local/*"
+      "Resource": [
+        "arn:aws:s3:::kops-tests"
+      ]
     },
     {
       "Effect": "Allow",

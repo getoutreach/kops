@@ -32,6 +32,7 @@ Create a secret
 ### Options inherited from parent commands
 
 ```
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --config string                    yaml config file (default is $HOME/.kops.yaml)
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -41,7 +42,7 @@ Create a secret
       --logtostderr                      log to standard error instead of files (default true)
       --name string                      Name of cluster. Overrides KOPS_CLUSTER_NAME environment variable
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --state string                     Location of state storage (kops 'config' file). Overrides KOPS_STATE_STORE environment variable
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
   -v, --v Level                          number for the log level verbosity
@@ -51,6 +52,7 @@ Create a secret
 ### SEE ALSO
 
 * [kops create](kops_create.md)	 - Create a resource by command line, filename or stdin.
+* [kops create secret ciliumpassword](kops_create_secret_ciliumpassword.md)	 - Create a cilium encryption key.
 * [kops create secret dockerconfig](kops_create_secret_dockerconfig.md)	 - Create a docker config.
 * [kops create secret encryptionconfig](kops_create_secret_encryptionconfig.md)	 - Create an encryption config.
 * [kops create secret keypair](kops_create_secret_keypair.md)	 - Create a secret keypair.

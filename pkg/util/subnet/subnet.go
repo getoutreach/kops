@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -61,7 +61,7 @@ func SplitInto8(parent *net.IPNet) ([]*net.IPNet, error) {
 				Mask: net.CIDRMask(networkLength, 32),
 			})
 		} else {
-			return nil, fmt.Errorf("Unexpected IP address type: %s", parent)
+			return nil, fmt.Errorf("unexpected IP address type: %s", parent)
 		}
 	}
 

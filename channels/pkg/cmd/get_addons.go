@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ limitations under the License.
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -56,7 +57,8 @@ func NewCmdGetAddons(f Factory, out io.Writer) *cobra.Command {
 		Short:   "get addons",
 		Long:    `List or get addons.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return RunGetAddons(f, out, &options)
+			ctx := context.TODO()
+			return RunGetAddons(ctx, f, out, &options)
 		},
 	}
 
@@ -69,13 +71,13 @@ type addonInfo struct {
 	Namespace *v1.Namespace
 }
 
-func RunGetAddons(f Factory, out io.Writer, options *GetAddonsOptions) error {
+func RunGetAddons(ctx context.Context, f Factory, out io.Writer, options *GetAddonsOptions) error {
 	k8sClient, err := f.KubernetesClient()
 	if err != nil {
 		return err
 	}
 
-	namespaces, err := k8sClient.CoreV1().Namespaces().List(metav1.ListOptions{})
+	namespaces, err := k8sClient.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return fmt.Errorf("error listing namespaces: %v", err)
 	}

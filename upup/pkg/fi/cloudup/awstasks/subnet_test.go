@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ func Test_Subnet_CannotChangeSubnet(t *testing.T) {
 	if err == nil {
 		t.Errorf("validation error was expected")
 	}
-	if fmt.Sprintf("%v", err) != "Subnet.CIDR: Invalid value: \"192.168.0.0/16\": field is immutable: old=\"192.168.0.1/16\" new=\"192.168.0.0/16\"" {
+	if fmt.Sprintf("%v", err) != "Subnet.CIDR: Forbidden: field is immutable: old=\"192.168.0.1/16\" new=\"192.168.0.0/16\"" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }
@@ -100,6 +100,7 @@ func TestSubnetCreate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error building context: %v", err)
 		}
+		defer context.Close()
 
 		if err := context.RunTasks(testRunTasksOptions); err != nil {
 			t.Fatalf("unexpected error during Run: %v", err)
@@ -144,42 +145,39 @@ func TestSharedSubnetCreateDoesNotCreateNew(t *testing.T) {
 	// Pre-create the vpc / subnet
 	vpc, err := c.CreateVpc(&ec2.CreateVpcInput{
 		CidrBlock: aws.String("172.20.0.0/16"),
-	})
-	if err != nil {
-		t.Fatalf("error creating test VPC: %v", err)
-	}
-	_, err = c.CreateTags(&ec2.CreateTagsInput{
-		Resources: []*string{vpc.Vpc.VpcId},
-		Tags: []*ec2.Tag{
+		TagSpecifications: []*ec2.TagSpecification{
 			{
-				Key:   aws.String("Name"),
-				Value: aws.String("ExistingVPC"),
+				ResourceType: aws.String(ec2.ResourceTypeVpc),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String("ExistingVPC"),
+					},
+				},
 			},
 		},
 	})
 	if err != nil {
-		t.Fatalf("error tagging test vpc: %v", err)
+		t.Fatalf("error creating test VPC: %v", err)
 	}
 
 	subnet, err := c.CreateSubnet(&ec2.CreateSubnetInput{
 		VpcId:     vpc.Vpc.VpcId,
 		CidrBlock: aws.String("172.20.1.0/24"),
-	})
-	if err != nil {
-		t.Fatalf("error creating test subnet: %v", err)
-	}
-
-	_, err = c.CreateTags(&ec2.CreateTagsInput{
-		Resources: []*string{subnet.Subnet.SubnetId},
-		Tags: []*ec2.Tag{
+		TagSpecifications: []*ec2.TagSpecification{
 			{
-				Key:   aws.String("Name"),
-				Value: aws.String("ExistingSubnet"),
+				ResourceType: aws.String(ec2.ResourceTypeSubnet),
+				Tags: []*ec2.Tag{
+					{
+						Key:   aws.String("Name"),
+						Value: aws.String("ExistingSubnet"),
+					},
+				},
 			},
 		},
 	})
 	if err != nil {
-		t.Fatalf("error tagging test subnet: %v", err)
+		t.Fatalf("error creating test subnet: %v", err)
 	}
 
 	// We define a function so we can rebuild the tasks, because we modify in-place when running
@@ -218,6 +216,7 @@ func TestSharedSubnetCreateDoesNotCreateNew(t *testing.T) {
 		if err != nil {
 			t.Fatalf("error building context: %v", err)
 		}
+		defer context.Close()
 
 		if err := context.RunTasks(testRunTasksOptions); err != nil {
 			t.Fatalf("unexpected error during Run: %v", err)

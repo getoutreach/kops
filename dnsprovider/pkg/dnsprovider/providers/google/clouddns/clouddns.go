@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ limitations under the License.
 package clouddns
 
 import (
+	"context"
 	"io"
 
 	"cloud.google.com/go/compute/metadata"
@@ -25,13 +26,14 @@ import (
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
 	dns "google.golang.org/api/dns/v1"
+	"google.golang.org/api/option"
 	gcfg "gopkg.in/gcfg.v1"
 	"k8s.io/klog"
 
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider"
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider/providers/google/clouddns/internal"
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider/providers/google/clouddns/internal/stubs"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -39,7 +41,7 @@ const (
 )
 
 func init() {
-	dnsprovider.RegisterDnsProvider(ProviderName, func(config io.Reader) (dnsprovider.Interface, error) {
+	dnsprovider.RegisterDNSProvider(ProviderName, func(config io.Reader) (dnsprovider.Interface, error) {
 		return newCloudDns(config)
 	})
 }
@@ -77,10 +79,12 @@ func newCloudDns(config io.Reader) (*Interface, error) {
 // CreateInterface creates a clouddns.Interface object using the specified parameters.
 // If no tokenSource is specified, uses oauth2.DefaultTokenSource.
 func CreateInterface(projectID string, tokenSource oauth2.TokenSource) (*Interface, error) {
+	ctx := context.TODO()
+
 	if tokenSource == nil {
 		var err error
 		tokenSource, err = google.DefaultTokenSource(
-			oauth2.NoContext,
+			ctx,
 			compute.CloudPlatformScope,
 			compute.ComputeScope)
 		klog.V(4).Infof("Using DefaultTokenSource %#v", tokenSource)
@@ -91,9 +95,7 @@ func CreateInterface(projectID string, tokenSource oauth2.TokenSource) (*Interfa
 		klog.Infof("Using existing Token Source %#v", tokenSource)
 	}
 
-	oauthClient := oauth2.NewClient(oauth2.NoContext, tokenSource)
-
-	service, err := dns.New(oauthClient)
+	service, err := dns.NewService(ctx, option.WithTokenSource(tokenSource))
 	if err != nil {
 		klog.Errorf("Failed to get Cloud DNS client: %v", err)
 	}

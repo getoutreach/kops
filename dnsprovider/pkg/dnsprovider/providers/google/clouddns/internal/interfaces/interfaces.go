@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import (
 )
 
 // Interfaces to directly mirror the Google Cloud DNS API structures.
-// See https://godoc.org/google.golang.org/api/dns/v1 for details
+// See https://pkg.go.dev/google.golang.org/api/dns/v1 for details
 // This facilitates stubbing out Google Cloud DNS for unit testing.
 // Only the parts of the API that we use are included.
 // Others can be added as needed.

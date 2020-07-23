@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Copyright 2016 The Kubernetes Authors.
+
+# Copyright 2019 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +18,15 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-KOPS_ROOT=$(git rev-parse --show-toplevel)
+. "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
-export API_OPTIONS="--verify-only" 
+cd "${KOPS_ROOT}"
+
+export API_OPTIONS="--verify-only"
 if make apimachinery-codegen; then
 	echo "apimachinery is up to date"
 else
-	echo "\n FAIL: - the verify-apimachinery.sh test failed, apimachinery is not up to date"
-	echo "\n FAIL: - please run the command 'make apimachinery'"
+	echo -e "\n FAIL: - the verify-apimachinery.sh test failed, apimachinery is not up to date"
+	echo -e "\n FAIL: - please run the command 'make apimachinery'"
 	exit 1
 fi

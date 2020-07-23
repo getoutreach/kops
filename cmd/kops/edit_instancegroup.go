@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/klog"
 	"k8s.io/kops/cmd/kops/util"
 	api "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/apis/kops/validation"
@@ -32,9 +34,9 @@ import (
 	"k8s.io/kops/pkg/kopscodecs"
 	"k8s.io/kops/pkg/try"
 	"k8s.io/kops/upup/pkg/fi/cloudup"
-	"k8s.io/kubernetes/pkg/kubectl/cmd/util/editor"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/cmd/util/editor"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -68,8 +70,9 @@ func NewCmdEditInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    editInstancegroupLong,
 		Example: editInstancegroupExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
 
-			err := RunEditInstanceGroup(f, cmd, args, os.Stdout, options)
+			err := RunEditInstanceGroup(ctx, f, cmd, args, os.Stdout, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -79,7 +82,7 @@ func NewCmdEditInstanceGroup(f *util.Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func RunEditInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, out io.Writer, options *EditInstanceGroupOptions) error {
+func RunEditInstanceGroup(ctx context.Context, f *util.Factory, cmd *cobra.Command, args []string, out io.Writer, options *EditInstanceGroupOptions) error {
 	if len(args) == 0 {
 		return fmt.Errorf("Specify name of instance group to edit")
 	}
@@ -89,14 +92,14 @@ func RunEditInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, ou
 
 	groupName := args[0]
 
-	cluster, err := rootCommand.Cluster()
+	cluster, err := rootCommand.Cluster(ctx)
 	if err != nil {
 		return err
 	}
 
 	channel, err := cloudup.ChannelForCluster(cluster)
 	if err != nil {
-		return err
+		klog.Warningf("%v", err)
 	}
 
 	clientset, err := rootCommand.Clientset()
@@ -108,7 +111,7 @@ func RunEditInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, ou
 		return fmt.Errorf("name is required")
 	}
 
-	oldGroup, err := clientset.InstanceGroupsFor(cluster).Get(groupName, metav1.GetOptions{})
+	oldGroup, err := clientset.InstanceGroupsFor(cluster).Get(ctx, groupName, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("error reading InstanceGroup %q: %v", groupName, err)
 	}
@@ -152,11 +155,6 @@ func RunEditInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, ou
 		return fmt.Errorf("object was not of expected type: %T", newObj)
 	}
 
-	err = validation.ValidateInstanceGroup(newGroup)
-	if err != nil {
-		return err
-	}
-
 	fullGroup, err := cloudup.PopulateInstanceGroupSpec(cluster, newGroup, channel)
 	if err != nil {
 		return err
@@ -175,13 +173,18 @@ func RunEditInstanceGroup(f *util.Factory, cmd *cobra.Command, args []string, ou
 		return err
 	}
 
-	err = validation.CrossValidateInstanceGroup(fullGroup, fullCluster, true)
+	cloud, err := cloudup.BuildCloud(fullCluster)
+	if err != nil {
+		return err
+	}
+
+	err = validation.CrossValidateInstanceGroup(fullGroup, fullCluster, cloud).ToAggregate()
 	if err != nil {
 		return err
 	}
 
 	// Note we perform as much validation as we can, before writing a bad config
-	_, err = clientset.InstanceGroupsFor(cluster).Update(fullGroup)
+	_, err = clientset.InstanceGroupsFor(cluster).Update(ctx, fullGroup, metav1.UpdateOptions{})
 	if err != nil {
 		return err
 	}

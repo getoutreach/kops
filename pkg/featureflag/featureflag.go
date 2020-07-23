@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -49,10 +49,8 @@ var (
 var (
 	// DNSPreCreate controls whether we pre-create DNS records.
 	DNSPreCreate = New("DNSPreCreate", Bool(true))
-	// DrainAndValidateRollingUpdate if set will use new rolling update code that will drain and validate.
-	DrainAndValidateRollingUpdate = New("DrainAndValidateRollingUpdate", Bool(true))
 	// EnableLaunchTemplates indicates we wish to switch to using launch templates rather than launchconfigurations
-	EnableLaunchTemplates = New("EnableLaunchTemplates", Bool(false))
+	EnableLaunchTemplates = New("EnableLaunchTemplates", Bool(true))
 	//EnableExternalCloudController toggles the use of cloud-controller-manager introduced in v1.7
 	EnableExternalCloudController = New("EnableExternalCloudController", Bool(false))
 	// EnableExternalDNS enables external DNS
@@ -78,12 +76,22 @@ var (
 	Spotinst = New("Spotinst", Bool(false))
 	// SpotinstOcean toggles the use of Spotinst Ocean instance group implementation.
 	SpotinstOcean = New("SpotinstOcean", Bool(false))
+	// SpotinstHybrid toggles between hybrid and full instance group implementations.
+	SpotinstHybrid = New("SpotinstHybrid", Bool(false))
+	// SpotinstController toggles the installation of the Spotinst controller addon.
+	SpotinstController = New("SpotinstController", Bool(true))
+	// VFSVaultSupport enables setting Vault as secret/keystore
+	VFSVaultSupport = New("VFSVaultSupport", Bool(false))
 	// VPCSkipEnableDNSSupport if set will make that a VPC does not need DNSSupport enabled.
 	VPCSkipEnableDNSSupport = New("VPCSkipEnableDNSSupport", Bool(false))
-	// VSphereCloudProvider enables the vsphere cloud provider
-	VSphereCloudProvider = New("VSphereCloudProvider", Bool(false))
 	// SkipEtcdVersionCheck will bypass the check that etcd-manager is using a supported etcd version
 	SkipEtcdVersionCheck = New("SkipEtcdVersionCheck", Bool(false))
+	// TerraformJSON outputs terraform in JSON instead of hcl output. JSON output can be also parsed by terraform 0.12
+	TerraformJSON = New("TerraformJSON", Bool(false))
+	// Terraform012 will output terraform in the 0.12 (hcl2) syntax
+	Terraform012 = New("Terraform-0.12", Bool(true))
+	// LegacyIAM will permit use of legacy IAM permissions.
+	LegacyIAM = New("LegacyIAM", Bool(false))
 )
 
 // FeatureFlag defines a feature flag

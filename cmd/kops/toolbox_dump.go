@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,8 +28,8 @@ import (
 	"k8s.io/kops/pkg/resources"
 	resourceops "k8s.io/kops/pkg/resources/ops"
 	"k8s.io/kops/upup/pkg/fi/cloudup"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -64,13 +64,15 @@ func NewCmdToolboxDump(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    toolboxDumpLong,
 		Example: toolboxDumpExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			if err := rootCommand.ProcessArgs(args); err != nil {
 				exitWithError(err)
 			}
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err := RunToolboxDump(f, out, options)
+			err := RunToolboxDump(ctx, f, out, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -84,7 +86,7 @@ func NewCmdToolboxDump(f *util.Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func RunToolboxDump(f *util.Factory, out io.Writer, options *ToolboxDumpOptions) error {
+func RunToolboxDump(ctx context.Context, f *util.Factory, out io.Writer, options *ToolboxDumpOptions) error {
 	clientset, err := f.Clientset()
 	if err != nil {
 		return err
@@ -94,7 +96,7 @@ func RunToolboxDump(f *util.Factory, out io.Writer, options *ToolboxDumpOptions)
 		return fmt.Errorf("ClusterName is required")
 	}
 
-	cluster, err := clientset.GetCluster(options.ClusterName)
+	cluster, err := clientset.GetCluster(ctx, options.ClusterName)
 	if err != nil {
 		return err
 	}
@@ -142,6 +144,6 @@ func RunToolboxDump(f *util.Factory, out io.Writer, options *ToolboxDumpOptions)
 		return nil
 
 	default:
-		return fmt.Errorf("Unsupported output format: %q", options.Output)
+		return fmt.Errorf("unsupported output format: %q", options.Output)
 	}
 }

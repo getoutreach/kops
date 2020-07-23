@@ -54,15 +54,14 @@ func (s *StringOrSlice) UnmarshalJSON(value []byte) error {
 			return nil
 		}
 		return nil
-	} else {
-		s.forceEncodeAsArray = false
-		var stringValue string
-		if err := json.Unmarshal(value, &stringValue); err != nil {
-			return err
-		}
-		s.values = []string{stringValue}
-		return nil
 	}
+	s.forceEncodeAsArray = false
+	var stringValue string
+	if err := json.Unmarshal(value, &stringValue); err != nil {
+		return err
+	}
+	s.values = []string{stringValue}
+	return nil
 }
 
 // String returns the string value, or the Itoa of the int value.
@@ -88,15 +87,15 @@ func (l StringOrSlice) Equal(r StringOrSlice) bool {
 
 // MarshalJSON implements the json.Marshaller interface.
 func (v StringOrSlice) MarshalJSON() ([]byte, error) {
-	encodeAsJsonArray := v.forceEncodeAsArray
+	encodeAsJSONArray := v.forceEncodeAsArray
 	if len(v.values) > 1 {
-		encodeAsJsonArray = true
+		encodeAsJSONArray = true
 	}
 	values := v.values
 	if values == nil {
 		values = []string{}
 	}
-	if encodeAsJsonArray {
+	if encodeAsJSONArray {
 		return json.Marshal(values)
 	} else if len(v.values) == 1 {
 		s := v.values[0]

@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,9 +17,8 @@ limitations under the License.
 package cloudup
 
 import (
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
-	api "k8s.io/kops/pkg/apis/kops"
+	kopsapi "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/loader"
 	"k8s.io/kops/util/pkg/reflectutils"
@@ -27,23 +26,21 @@ import (
 
 type SpecBuilder struct {
 	OptionsLoader *loader.OptionsLoader
-
-	Tags sets.String
 }
 
-func (l *SpecBuilder) BuildCompleteSpec(clusterSpec *api.ClusterSpec) (*api.ClusterSpec, error) {
+func (l *SpecBuilder) BuildCompleteSpec(clusterSpec *kopsapi.ClusterSpec) (*kopsapi.ClusterSpec, error) {
 
 	loaded, err := l.OptionsLoader.Build(clusterSpec)
 	if err != nil {
 		return nil, err
 	}
-	completed := &api.ClusterSpec{}
-	*completed = *(loaded.(*api.ClusterSpec))
+	completed := &kopsapi.ClusterSpec{}
+	*completed = *(loaded.(*kopsapi.ClusterSpec))
 
 	// Master kubelet config = (base kubelet config + master kubelet config)
-	masterKubelet := &api.KubeletConfigSpec{}
-	reflectutils.JsonMergeStruct(masterKubelet, completed.Kubelet)
-	reflectutils.JsonMergeStruct(masterKubelet, completed.MasterKubelet)
+	masterKubelet := &kopsapi.KubeletConfigSpec{}
+	reflectutils.JSONMergeStruct(masterKubelet, completed.Kubelet)
+	reflectutils.JSONMergeStruct(masterKubelet, completed.MasterKubelet)
 	completed.MasterKubelet = masterKubelet
 
 	klog.V(1).Infof("options: %s", fi.DebugAsJsonStringIndent(completed))

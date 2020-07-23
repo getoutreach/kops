@@ -7,12 +7,12 @@ Validate a kops cluster.
 
 ### Synopsis
 
-This commands validates the following components: 
+This commands validates the following components:
 
-  1. All k8s masters are running and have "Ready" status.  
-  2. All k8s nodes are running and have "Ready" status.  
-  3. Component status returns healthy for all components.  
-  4. All pods in the kube-system namespace are running and healthy.
+  1.  All k8s masters are running and have "Ready" status.
+  2.  All k8s nodes are running and have "Ready" status.
+  3.  Component status returns healthy for all components.
+  4.  All pods with a critical priority are running and healthy.
 
 ```
 kops validate cluster [flags]
@@ -21,22 +21,25 @@ kops validate cluster [flags]
 ### Examples
 
 ```
-  # Validate a cluster.
-  # This command uses the currently selected kops cluster as
-  # set by the kubectl config.
-  kops validate cluster
+  # Validate the cluster set as the current context of the kube config.
+  # Kops will try for 10 minutes to validate the cluster 3 times.
+  kops validate cluster --wait 10m --count 3
 ```
 
 ### Options
 
 ```
-  -h, --help            help for cluster
-  -o, --output string   Output format. One of json|yaml|table. (default "table")
+      --count int           If set, will validate the cluster consecutive times
+  -h, --help                help for cluster
+      --kubeconfig string   Path to the kubeconfig file
+  -o, --output string       Output format. One of json|yaml|table. (default "table")
+      --wait duration       If set, will wait for cluster to be ready
 ```
 
 ### Options inherited from parent commands
 
 ```
+      --add_dir_header                   If true, adds the file directory to the header
       --alsologtostderr                  log to standard error as well as files
       --config string                    yaml config file (default is $HOME/.kops.yaml)
       --log_backtrace_at traceLocation   when logging hits line file:N, emit a stack trace (default :0)
@@ -46,7 +49,7 @@ kops validate cluster [flags]
       --logtostderr                      log to standard error instead of files (default true)
       --name string                      Name of cluster. Overrides KOPS_CLUSTER_NAME environment variable
       --skip_headers                     If true, avoid header prefixes in the log messages
-      --skip_log_headers                 If true, avoid headers when openning log files
+      --skip_log_headers                 If true, avoid headers when opening log files
       --state string                     Location of state storage (kops 'config' file). Overrides KOPS_STATE_STORE environment variable
       --stderrthreshold severity         logs at or above this threshold go to stderr (default 2)
   -v, --v Level                          number for the log level verbosity

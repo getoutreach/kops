@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -190,12 +190,12 @@ func (_ *IAMRole) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *IAMRole) error
 }
 
 type terraformIAMRole struct {
-	Name             *string            `json:"name"`
-	AssumeRolePolicy *terraform.Literal `json:"assume_role_policy"`
+	Name             *string            `json:"name" cty:"name"`
+	AssumeRolePolicy *terraform.Literal `json:"assume_role_policy" cty:"assume_role_policy"`
 }
 
 func (_ *IAMRole) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *IAMRole) error {
-	policy, err := t.AddFile("aws_iam_role", *e.Name, "policy", e.RolePolicyDocument)
+	policy, err := t.AddFile("aws_iam_role", *e.Name, "policy", e.RolePolicyDocument, false)
 	if err != nil {
 		return fmt.Errorf("error rendering RolePolicyDocument: %v", err)
 	}

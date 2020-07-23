@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -28,11 +28,12 @@ import (
 	"k8s.io/kops/pkg/apis/kops/util"
 	"k8s.io/kops/pkg/featureflag"
 	"k8s.io/kops/pkg/model/components"
+	nodeidentityaws "k8s.io/kops/pkg/nodeidentity/aws"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awstasks"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
 
-	"github.com/blang/semver"
+	"github.com/blang/semver/v4"
 	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/klog"
 )
@@ -182,7 +183,7 @@ func (m *KopsModelContext) NodeInstanceGroups() []*kops.InstanceGroup {
 
 // CloudTagsForInstanceGroup computes the tags to apply to instances in the specified InstanceGroup
 func (m *KopsModelContext) CloudTagsForInstanceGroup(ig *kops.InstanceGroup) (map[string]string, error) {
-	labels := make(map[string]string)
+	labels := m.CloudTags(m.AutoscalingGroupName(ig), false)
 
 	// Apply any user-specified global labels first so they can be overridden by IG-specific labels
 	for k, v := range m.Cluster.Spec.CloudLabels {
@@ -221,6 +222,8 @@ func (m *KopsModelContext) CloudTagsForInstanceGroup(ig *kops.InstanceGroup) (ma
 		labels[awstasks.CloudTagInstanceGroupRolePrefix+strings.ToLower(string(kops.InstanceGroupRoleBastion))] = "1"
 	}
 
+	labels[nodeidentityaws.CloudTagInstanceGroupName] = ig.Name
+
 	return labels, nil
 }
 
@@ -241,13 +244,11 @@ func (m *KopsModelContext) CloudTags(name string, shared bool) map[string]string
 
 		// Kubernetes 1.6 introduced the shared ownership tag; that replaces TagClusterName
 		setLegacyTag := true
-		if m.IsKubernetesGTE("1.6") {
-			// For the moment, we only skip the legacy tag for shared resources
-			// (other people may be using it)
-			if shared {
-				klog.V(4).Infof("Skipping %q tag for shared resource", awsup.TagClusterName)
-				setLegacyTag = false
-			}
+		// For the moment, we only skip the legacy tag for shared resources
+		// (other people may be using it)
+		if shared {
+			klog.V(4).Infof("Skipping %q tag for shared resource", awsup.TagClusterName)
+			setLegacyTag = false
 		}
 		if setLegacyTag {
 			tags[awsup.TagClusterName] = m.Cluster.ObjectMeta.Name
@@ -257,6 +258,9 @@ func (m *KopsModelContext) CloudTags(name string, shared bool) map[string]string
 			tags["kubernetes.io/cluster/"+m.Cluster.ObjectMeta.Name] = "shared"
 		} else {
 			tags["kubernetes.io/cluster/"+m.Cluster.ObjectMeta.Name] = "owned"
+			for k, v := range m.Cluster.Spec.CloudLabels {
+				tags[k] = v
+			}
 		}
 
 	}
@@ -304,7 +308,7 @@ func (m *KopsModelContext) UseLoadBalancerForAPI() bool {
 // HA - see https://github.com/kubernetes/kops/issues/4252
 func (m *KopsModelContext) UseLoadBalancerForInternalAPI() bool {
 	return m.UseLoadBalancerForAPI() &&
-		m.Cluster.Spec.API.LoadBalancer.UseForInternalApi == true
+		m.Cluster.Spec.API.LoadBalancer.UseForInternalApi
 }
 
 // UsePrivateDNS checks if we are using private DNS
@@ -348,6 +352,13 @@ func (m *KopsModelContext) UseEtcdTLS() bool {
 	return false
 }
 
+// UseSSHKey returns true if SSHKeyName from the cluster spec is not set to an empty string (""). Setting SSHKeyName
+// to an empty string indicates that an SSH key should not be set on instances.
+func (m *KopsModelContext) UseSSHKey() bool {
+	sshKeyName := m.Cluster.Spec.SSHKeyName
+	return sshKeyName == nil || *sshKeyName != ""
+}
+
 // KubernetesVersion parses the semver version of kubernetes, from the cluster spec
 func (m *KopsModelContext) KubernetesVersion() semver.Version {
 	// TODO: Remove copy-pasting c.f. https://github.com/kubernetes/kops/blob/master/pkg/model/components/context.go#L32
@@ -369,6 +380,11 @@ func (m *KopsModelContext) KubernetesVersion() semver.Version {
 // IsKubernetesGTE checks if the kubernetes version is at least version, ignoring prereleases / patches
 func (m *KopsModelContext) IsKubernetesGTE(version string) bool {
 	return util.IsKubernetesGTE(version, m.KubernetesVersion())
+}
+
+// IsKubernetesLT checks if the kubernetes version is before the specified version, ignoring prereleases / patches
+func (m *KopsModelContext) IsKubernetesLT(version string) bool {
+	return !m.IsKubernetesGTE(version)
 }
 
 // WellKnownServiceIP returns a service ip with the service cidr

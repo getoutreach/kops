@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -24,8 +25,8 @@ import (
 	"k8s.io/kops/cmd/kops/util"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/upup/pkg/fi"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -33,8 +34,11 @@ var (
 		Delete a secret.`))
 
 	deleteSecretExample = templates.Examples(i18n.T(`
+	# Syntax: kops delete secret <type> <name>
+	# or kops delete secret <type> <name> <id>
+	kops delete secret sshpublickey admin
 
-		`))
+	`))
 
 	deleteSecretShort = i18n.T(`Delete a secret`)
 )
@@ -55,6 +59,8 @@ func NewCmdDeleteSecret(f *util.Factory, out io.Writer) *cobra.Command {
 		Long:    deleteSecretLong,
 		Example: deleteSecretExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			if len(args) != 2 && len(args) != 3 {
 				exitWithError(fmt.Errorf("Syntax: <type> <name> [<id>]"))
 			}
@@ -67,7 +73,7 @@ func NewCmdDeleteSecret(f *util.Factory, out io.Writer) *cobra.Command {
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err := RunDeleteSecret(f, out, options)
+			err := RunDeleteSecret(ctx, f, out, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -77,7 +83,7 @@ func NewCmdDeleteSecret(f *util.Factory, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func RunDeleteSecret(f *util.Factory, out io.Writer, options *DeleteSecretOptions) error {
+func RunDeleteSecret(ctx context.Context, f *util.Factory, out io.Writer, options *DeleteSecretOptions) error {
 	if options.ClusterName == "" {
 		return fmt.Errorf("ClusterName is required")
 	}
@@ -93,7 +99,7 @@ func RunDeleteSecret(f *util.Factory, out io.Writer, options *DeleteSecretOption
 		return err
 	}
 
-	cluster, err := GetCluster(f, options.ClusterName)
+	cluster, err := GetCluster(ctx, f, options.ClusterName)
 	if err != nil {
 		return err
 	}
@@ -121,7 +127,7 @@ func RunDeleteSecret(f *util.Factory, out io.Writer, options *DeleteSecretOption
 	if options.SecretID != "" {
 		var matches []*fi.KeystoreItem
 		for _, s := range secrets {
-			if s.Id == options.SecretID {
+			if s.ID == options.SecretID {
 				matches = append(matches, s)
 			}
 		}
@@ -151,7 +157,7 @@ func RunDeleteSecret(f *util.Factory, out io.Writer, options *DeleteSecretOption
 		keyset := &kops.Keyset{}
 		keyset.Name = secrets[0].Name
 		keyset.Spec.Type = secrets[0].Type
-		err = keyStore.DeleteKeysetItem(keyset, secrets[0].Id)
+		err = keyStore.DeleteKeysetItem(keyset, secrets[0].ID)
 	}
 	if err != nil {
 		return fmt.Errorf("error deleting secret: %v", err)

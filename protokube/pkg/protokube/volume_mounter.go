@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,9 +24,10 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/util/mount"
-	"k8s.io/kubernetes/pkg/util/nsenter" // moves to k8s.io/utils/nsenter in 1.14
-	utilsexec "k8s.io/utils/exec"
+	"k8s.io/kops/protokube/pkg/hostmount"
+	utilexec "k8s.io/utils/exec"
+	"k8s.io/utils/mount"
+	"k8s.io/utils/nsenter"
 )
 
 type VolumeMountController struct {
@@ -114,23 +115,20 @@ func (k *VolumeMountController) safeFormatAndMount(volume *Volume, mountpoint st
 	safeFormatAndMount := &mount.SafeFormatAndMount{}
 
 	if Containerized {
-		ne, err := nsenter.NewNsenter(pathFor("/"), utilsexec.New())
+		ne, err := nsenter.NewNsenter(pathFor("/"), utilexec.New())
 		if err != nil {
-			return fmt.Errorf("error building ns-enter object: %v", err)
+			return fmt.Errorf("error building ns-enter helper: %v", err)
 		}
 
-		// This is a directory that is mounted identically on the container and the host; we don't have that.
-		sharedDir := "/no-shared-directories"
-
 		// Build mount & exec implementations that execute in the host namespaces
-		safeFormatAndMount.Interface = mount.NewNsenterMounter(sharedDir, ne)
-		safeFormatAndMount.Exec = NewNsEnterExec()
+		safeFormatAndMount.Interface = hostmount.New(ne)
+		safeFormatAndMount.Exec = ne
 
-		// Note that we don't use pathFor for operations going through safeFormatAndMount,
-		// because NewNsenterMounter and NewNsEnterExec will operate in the host
+		// Note that we don't use PathFor for operations going through safeFormatAndMount,
+		// because our mounter and nsenter will operate in the host
 	} else {
 		safeFormatAndMount.Interface = mount.New("")
-		safeFormatAndMount.Exec = mount.NewOsExec()
+		safeFormatAndMount.Exec = utilexec.New()
 	}
 
 	// Check if it is already mounted
@@ -177,9 +175,8 @@ func (k *VolumeMountController) safeFormatAndMount(volume *Volume, mountpoint st
 			}
 
 			return fmt.Errorf("found multiple existing mounts of %q at %q", device, mountpoint)
-		} else {
-			klog.Infof("Found existing mount of %q at %q", device, mountpoint)
 		}
+		klog.Infof("Found existing mount of %q at %q", device, mountpoint)
 	}
 
 	// If we're containerized we also want to mount the device (again) into our container

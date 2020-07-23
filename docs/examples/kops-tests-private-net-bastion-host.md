@@ -48,7 +48,7 @@ export KOPS_STATE_STORE=s3://my-kops-s3-bucket-for-cluster-state
 Some things to note from here:
 
 - "NAME" will be an environment variable that we'll use from now in order to refer to our cluster name. For this practical exercise, our cluster name is "privatekopscluster.k8s.local".
-- Because we'll use gossip DNS instead of a valid DNS domain on AWS ROUTE53 service, our cluster name need to include the string **".k8s.local"** at the end (this is covered on our AWS tutorials). You can see more about this on our [Getting Started Doc.](https://github.com/kubernetes/kops/blob/master/docs/aws.md)
+- Because we'll use gossip DNS instead of a valid DNS domain on AWS ROUTE53 service, our cluster name need to include the string **".k8s.local"** at the end (this is covered on our AWS tutorials). You can see more about this on our [Getting Started Doc.](../getting_started/aws.md)
 
 
 ## KOPS PRIVATE CLUSTER CREATION:
@@ -77,7 +77,7 @@ A few things to note here:
 - The "--topology private" argument will ensure that all our instances will have private IP's and no public IP's from amazon.
 - We are including the arguments "--node-size" and "master-size" to specify the "instance types" for both our masters and worker nodes.
 - Because we are just doing a simple LAB, we are using "t2.micro" machines. Please DON'T USE t2.micro on real production systems. Start with "t2.medium" as a minimum realistic/workable machine type.
-- And finally, the "--networking kopeio-vxlan" argument. With the private networking model, we need to tell kops which networking subsystem to use. More information about kops supported networking models can be obtained from the [KOPS Kubernetes Networking Documentation](https://github.com/kubernetes/kops/blob/master/docs/networking.md). For this exercise we'll use "kopeio-vxlan" (or "kopeio" for short).
+- And finally, the "--networking kopeio-vxlan" argument. With the private networking model, we need to tell kops which networking subsystem to use. More information about kops supported networking models can be obtained from the [KOPS Kubernetes Networking Documentation](../networking.md). For this exercise we'll use "kopeio-vxlan" (or "kopeio" for short).
 
 **NOTE**: You can add the "--bastion" argument here if you are not using "gossip dns" and create the bastion from start, but if you are using "gossip-dns" this will make this cluster to fail (this is a bug we are correcting now). For the moment don't use "--bastion" when using gossip DNS. We'll show you how to get around this by first creating the private cluster, then creation the bastion instance group once the cluster is running.
 
@@ -136,16 +136,16 @@ kops create instancegroup bastions --role Bastion --subnet utility-us-east-1a --
 ```
 
 **Explanation of this command:**
+
 - This command will add to our cluster definition a new instance group called "bastions" with the "Bastion" role on the aws subnet "utility-us-east-1a". Note that the "Bastion" role need the first letter to be a capital (Bastion=ok, bastion=not ok).
-- The subnet "utility-us-east-1a" was created when we created our cluster the first time. KOPS add the "utility-" prefix to all subnets created on all specified AZ's. In other words, if we instructed kops to deploy our instances on us-east-1a, use-east-1b and use-east-1c, kops will create the subnets "utility-us-east-1a", "utility-us-east-1b" and "utility-us-east-1c". Because we need to tell kops where to deploy our bastion (or bastions), wee need to specify the subnet.
+- The subnet "utility-us-east-1a" was created when we created our cluster the first time. KOPS add the "utility-" prefix to all subnets created on all specified AZ's. In other words, if we instructed kops to deploy our instances on us-east-1a, use-east-1b and use-east-1c, kops will create the subnets "utility-us-east-1a", "utility-us-east-1b" and "utility-us-east-1c". Because we need to tell kops where to deploy our bastion (or bastions), we need to specify the subnet.
 
 You'll see the following output in your editor when you can change your bastion group size and add more networks.
 
-```bash
+```yaml
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: null
   name: bastions
 spec:
   image: kope.io/k8s-1.7-debian-jessie-amd64-hvm-ebs-2017-07-28
@@ -307,7 +307,7 @@ ip-172-20-74-55.ec2.internal    master  True
 Your cluster privatekopscluster.k8s.local is ready
 ```
 
-## MAKING THE BASTION LAYER "HIGHLY AVAILABLE".
+## MAKING THE BASTION LAYER "HIGHLY AVAILABLE"
 
 If for any reason any "legendary monster from the comics" decides to destroy the amazon AZ that contains our bastion, we'll basically be unable to enter to our instances. Let's add some H.A. to our bastion layer and force amazon to deploy additional bastion instances on other availability zones.
 
@@ -319,11 +319,10 @@ kops edit ig bastions --name ${NAME}
 
 And change minSize/maxSize to 3 (3 instances) and add more subnets:
 
-```bash
+```yaml
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
 metadata:
-  creationTimestamp: 2017-08-28T17:05:23Z
   labels:
     kops.k8s.io/cluster: privatekopscluster.k8s.local
   name: bastions

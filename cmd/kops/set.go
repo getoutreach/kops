@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,19 +21,19 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/kops/cmd/kops/util"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
 	setLong = templates.LongDesc(i18n.T(`Set a configuration field.
 
-        kops set does not update the cloud resources, to apply the changes use "kops update cluster".
+        kops set does not update the cloud resources; to apply the changes use "kops update cluster".
     `))
 
 	setExample = templates.Examples(i18n.T(`
-    # Set cluster to run kubernetes version 1.10.0
-    kops set cluster k8s-cluster.example.com spec.kubernetesVersion=1.10.0
+    # Set cluster to run kubernetes version 1.17.0
+    kops set cluster k8s-cluster.example.com spec.kubernetesVersion=1.17.0
 	`))
 )
 

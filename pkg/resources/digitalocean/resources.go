@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,15 +26,17 @@ import (
 
 	"github.com/digitalocean/godo"
 
+	"k8s.io/klog"
 	"k8s.io/kops/dns-controller/pkg/dns"
 	"k8s.io/kops/pkg/resources"
 	"k8s.io/kops/upup/pkg/fi"
 )
 
 const (
-	resourceTypeDroplet   = "droplet"
-	resourceTypeVolume    = "volume"
-	resourceTypeDNSRecord = "dns-record"
+	resourceTypeDroplet      = "droplet"
+	resourceTypeVolume       = "volume"
+	resourceTypeDNSRecord    = "dns-record"
+	resourceTypeLoadBalancer = "loadbalancer"
 )
 
 type listFn func(fi.Cloud, string) ([]*resources.Resource, error)
@@ -46,6 +48,7 @@ func ListResources(cloud *Cloud, clusterName string) (map[string]*resources.Reso
 		listVolumes,
 		listDroplets,
 		listDNS,
+		listLoadBalancers,
 	}
 
 	for _, fn := range listFunctions {
@@ -120,7 +123,7 @@ func listVolumes(cloud fi.Cloud, clusterName string) ([]*resources.Resource, err
 
 	volumeMatch := strings.Replace(clusterName, ".", "-", -1)
 
-	volumes, err := getAllVolumesByRegion(c, c.Region)
+	volumes, err := getAllVolumesByRegion(c, c.Region())
 	if err != nil {
 		return nil, fmt.Errorf("failed to list volumes: %s", err)
 	}
@@ -195,12 +198,17 @@ func listDNS(cloud fi.Cloud, clusterName string) ([]*resources.Resource, error) 
 	}
 
 	if domainName == "" {
+		if strings.HasSuffix(clusterName, ".k8s.local") {
+			klog.Info("Domain Name is empty. Ok to have an empty domain name since cluster is configured as gossip cluster.")
+			return nil, nil
+		}
+
 		return nil, fmt.Errorf("failed to find domain for cluster: %s", clusterName)
 	}
 
 	records, err := getAllRecordsByDomain(c, domainName)
 	if err != nil {
-		return nil, fmt.Errorf("faile to list records for domain %s: %s", domainName, err)
+		return nil, fmt.Errorf("failed to list records for domain %s: %s", domainName, err)
 	}
 
 	var resourceTrackers []*resources.Resource
@@ -259,6 +267,67 @@ func getAllRecordsByDomain(cloud *Cloud, domain string) ([]godo.DomainRecord, er
 	return allRecords, nil
 }
 
+func listLoadBalancers(cloud fi.Cloud, clusterName string) ([]*resources.Resource, error) {
+	c := cloud.(*Cloud)
+	var resourceTrackers []*resources.Resource
+
+	clusterTag := "KubernetesCluster-Master:" + strings.Replace(clusterName, ".", "-", -1)
+
+	lbs, err := getAllLoadBalancers(c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list lbs: %v", err)
+	}
+
+	for _, lb := range lbs {
+		if strings.Contains(lb.Tag, clusterTag) {
+			resourceTracker := &resources.Resource{
+				Name:    lb.Name,
+				ID:      lb.ID,
+				Type:    resourceTypeLoadBalancer,
+				Deleter: deleteLoadBalancer,
+				Obj:     lb,
+			}
+
+			var blocks []string
+			for _, dropletID := range lb.DropletIDs {
+				blocks = append(blocks, "droplet:"+strconv.Itoa(dropletID))
+			}
+
+			resourceTracker.Blocks = blocks
+			resourceTrackers = append(resourceTrackers, resourceTracker)
+		}
+	}
+
+	return resourceTrackers, nil
+}
+
+func getAllLoadBalancers(cloud *Cloud) ([]godo.LoadBalancer, error) {
+	allLoadBalancers := []godo.LoadBalancer{}
+
+	opt := &godo.ListOptions{}
+	for {
+		lbs, resp, err := cloud.LoadBalancers().List(context.TODO(), opt)
+		if err != nil {
+			return nil, err
+		}
+
+		allLoadBalancers = append(allLoadBalancers, lbs...)
+
+		if resp.Links == nil || resp.Links.IsLastPage() {
+			break
+		}
+
+		page, err := resp.Links.CurrentPage()
+		if err != nil {
+			return nil, err
+		}
+
+		opt.Page = page + 1
+	}
+
+	return allLoadBalancers, nil
+}
+
 func deleteDroplet(cloud fi.Cloud, t *resources.Resource) error {
 	c := cloud.(*Cloud)
 
@@ -309,14 +378,27 @@ func deleteRecord(cloud fi.Cloud, domain string, t *resources.Resource) error {
 	return nil
 }
 
+func deleteLoadBalancer(cloud fi.Cloud, t *resources.Resource) error {
+	c := cloud.(*Cloud)
+	lb := t.Obj.(godo.LoadBalancer)
+	_, err := c.Client.LoadBalancers.Delete(context.TODO(), lb.ID)
+
+	if err != nil {
+		return fmt.Errorf("failed to delete load balancer with name %s %v", lb.Name, err)
+	}
+
+	return nil
+}
+
 func waitForDetach(cloud *Cloud, action *godo.Action) error {
 	timeout := time.After(10 * time.Second)
-	tick := time.Tick(500 * time.Millisecond)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-timeout:
 			return errors.New("timed out waiting for volume to detach")
-		case <-tick:
+		case <-ticker.C:
 			updatedAction, _, err := cloud.Client.Actions.Get(context.TODO(), action.ID)
 			if err != nil {
 				return err

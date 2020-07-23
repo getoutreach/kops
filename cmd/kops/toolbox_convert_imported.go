@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -26,8 +27,8 @@ import (
 	api "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
 	"k8s.io/kops/upup/pkg/kutil"
-	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/kubectl/util/templates"
+	"k8s.io/kubectl/pkg/util/i18n"
+	"k8s.io/kubectl/pkg/util/templates"
 )
 
 var (
@@ -70,13 +71,15 @@ func NewCmdToolboxConvertImported(f *util.Factory, out io.Writer) *cobra.Command
 		Long:    toolboxConvertImportedLong,
 		Example: toolboxConvertImportedExample,
 		Run: func(cmd *cobra.Command, args []string) {
+			ctx := context.TODO()
+
 			if err := rootCommand.ProcessArgs(args); err != nil {
 				exitWithError(err)
 			}
 
 			options.ClusterName = rootCommand.ClusterName()
 
-			err := RunToolboxConvertImported(f, out, options)
+			err := RunToolboxConvertImported(ctx, f, out, options)
 			if err != nil {
 				exitWithError(err)
 			}
@@ -89,7 +92,7 @@ func NewCmdToolboxConvertImported(f *util.Factory, out io.Writer) *cobra.Command
 	return cmd
 }
 
-func RunToolboxConvertImported(f *util.Factory, out io.Writer, options *ToolboxConvertImportedOptions) error {
+func RunToolboxConvertImported(ctx context.Context, f *util.Factory, out io.Writer, options *ToolboxConvertImportedOptions) error {
 	clientset, err := f.Clientset()
 	if err != nil {
 		return err
@@ -99,7 +102,7 @@ func RunToolboxConvertImported(f *util.Factory, out io.Writer, options *ToolboxC
 		return fmt.Errorf("ClusterName is required")
 	}
 
-	cluster, err := clientset.GetCluster(options.ClusterName)
+	cluster, err := clientset.GetCluster(ctx, options.ClusterName)
 	if err != nil {
 		return err
 	}
@@ -108,7 +111,7 @@ func RunToolboxConvertImported(f *util.Factory, out io.Writer, options *ToolboxC
 		return fmt.Errorf("cluster %q not found", options.ClusterName)
 	}
 
-	list, err := clientset.InstanceGroupsFor(cluster).List(metav1.ListOptions{})
+	list, err := clientset.InstanceGroupsFor(cluster).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -132,18 +135,18 @@ func RunToolboxConvertImported(f *util.Factory, out io.Writer, options *ToolboxC
 
 	// TODO: Switch to cloudup.BuildCloud
 	if len(cluster.Spec.Subnets) == 0 {
-		return fmt.Errorf("Configuration must include Subnets")
+		return fmt.Errorf("configuration must include Subnets")
 	}
 
 	region := ""
 	for _, subnet := range cluster.Spec.Subnets {
 		if len(subnet.Name) <= 2 {
-			return fmt.Errorf("Invalid AWS zone: %q", subnet.Zone)
+			return fmt.Errorf("invalid AWS zone: %q", subnet.Zone)
 		}
 
 		zoneRegion := subnet.Zone[:len(subnet.Zone)-1]
 		if region != "" && zoneRegion != region {
-			return fmt.Errorf("Clusters cannot span multiple regions")
+			return fmt.Errorf("clusters cannot span multiple regions")
 		}
 
 		region = zoneRegion
@@ -170,7 +173,7 @@ func RunToolboxConvertImported(f *util.Factory, out io.Writer, options *ToolboxC
 		Channel:        channel,
 	}
 
-	err = d.Upgrade()
+	err = d.Upgrade(ctx)
 	if err != nil {
 		return err
 	}

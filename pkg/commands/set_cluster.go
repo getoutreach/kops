@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ limitations under the License.
 package commands
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/kops/cmd/kops/util"
 	api "k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/featureflag"
+	"k8s.io/kops/upup/pkg/fi"
 )
 
 type SetClusterOptions struct {
@@ -36,13 +38,13 @@ type SetClusterOptions struct {
 }
 
 // RunSetCluster implements the set cluster command logic
-func RunSetCluster(f *util.Factory, cmd *cobra.Command, out io.Writer, options *SetClusterOptions) error {
+func RunSetCluster(ctx context.Context, f *util.Factory, cmd *cobra.Command, out io.Writer, options *SetClusterOptions) error {
 	if !featureflag.SpecOverrideFlag.Enabled() {
 		return fmt.Errorf("set cluster command is current feature gated; set `export KOPS_FEATURE_FLAGS=SpecOverrideFlag`")
 	}
 
 	if options.ClusterName == "" {
-		return field.Required(field.NewPath("ClusterName"), "Cluster name is required")
+		return field.Required(field.NewPath("clusterName"), "Cluster name is required")
 	}
 
 	clientset, err := f.Clientset()
@@ -50,12 +52,12 @@ func RunSetCluster(f *util.Factory, cmd *cobra.Command, out io.Writer, options *
 		return err
 	}
 
-	cluster, err := clientset.GetCluster(options.ClusterName)
+	cluster, err := clientset.GetCluster(ctx, options.ClusterName)
 	if err != nil {
 		return err
 	}
 
-	instanceGroups, err := ReadAllInstanceGroups(clientset, cluster)
+	instanceGroups, err := ReadAllInstanceGroups(ctx, clientset, cluster)
 	if err != nil {
 		return err
 	}
@@ -64,7 +66,7 @@ func RunSetCluster(f *util.Factory, cmd *cobra.Command, out io.Writer, options *
 		return err
 	}
 
-	if err := UpdateCluster(clientset, cluster, instanceGroups); err != nil {
+	if err := UpdateCluster(ctx, clientset, cluster, instanceGroups); err != nil {
 		return err
 	}
 
@@ -91,10 +93,24 @@ func SetClusterFields(fields []string, cluster *api.Cluster, instanceGroups []*a
 			cluster.Spec.Kubelet.AuthenticationTokenWebhook = &v
 		case "cluster.spec.nodePortAccess":
 			cluster.Spec.NodePortAccess = append(cluster.Spec.NodePortAccess, kv[1])
+		case "spec.docker.selinuxEnabled":
+			v, err := strconv.ParseBool(kv[1])
+			if err != nil {
+				return fmt.Errorf("unknown boolean value: %q", kv[1])
+			}
+			if cluster.Spec.Docker == nil {
+				cluster.Spec.Docker = &api.DockerConfig{}
+			}
+			cluster.Spec.Docker.SelinuxEnabled = &v
 		case "spec.kubernetesVersion":
 			cluster.Spec.KubernetesVersion = kv[1]
 		case "spec.masterPublicName":
 			cluster.Spec.MasterPublicName = kv[1]
+		case "spec.kubeDNS.provider":
+			if cluster.Spec.KubeDNS == nil {
+				cluster.Spec.KubeDNS = &api.KubeDNSConfig{}
+			}
+			cluster.Spec.KubeDNS.Provider = kv[1]
 		case "cluster.spec.etcdClusters[*].enableEtcdTLS":
 			v, err := strconv.ParseBool(kv[1])
 			if err != nil {
@@ -130,11 +146,46 @@ func SetClusterFields(fields []string, cluster *api.Cluster, instanceGroups []*a
 				}
 				etcd.Manager.Image = kv[1]
 			}
+		case "cluster.spec.networking.cilium.ipam":
+			createCiliumNetworking(cluster)
+			cluster.Spec.Networking.Cilium.Ipam = kv[1]
+		case "cluster.spec.networking.cilium.enableNodePort":
+			createCiliumNetworking(cluster)
+			v, err := strconv.ParseBool(kv[1])
+			if err != nil {
+				return fmt.Errorf("unknown boolean value: %q", kv[1])
+			}
+			cluster.Spec.Networking.Cilium.EnableNodePort = v
+		case "cluster.spec.networking.cilium.disableMasquerade":
+			createCiliumNetworking(cluster)
+			v, err := strconv.ParseBool(kv[1])
+			if err != nil {
+				return fmt.Errorf("unknown boolean value: %q", kv[1])
+			}
+			cluster.Spec.Networking.Cilium.DisableMasquerade = v
+		case "cluster.spec.kubeProxy.enabled":
+			if cluster.Spec.KubeProxy == nil {
+				cluster.Spec.KubeProxy = &api.KubeProxyConfig{}
+			}
+			v, err := strconv.ParseBool(kv[1])
+			if err != nil {
+				return fmt.Errorf("unknown boolean value: %q", kv[1])
+			}
+			cluster.Spec.KubeProxy.Enabled = fi.Bool(v)
 		default:
 			return fmt.Errorf("unhandled field: %q", field)
 		}
 	}
 	return nil
+}
+
+func createCiliumNetworking(cluster *api.Cluster) {
+	if cluster.Spec.Networking == nil {
+		cluster.Spec.Networking = &api.NetworkingSpec{}
+	}
+	if cluster.Spec.Networking.Cilium == nil {
+		cluster.Spec.Networking.Cilium = &api.CiliumNetworkingSpec{}
+	}
 }
 
 func toEtcdProviderType(in string) (api.EtcdProviderType, error) {

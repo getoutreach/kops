@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,13 +19,11 @@ package alimodel
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/dns"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/alitasks"
-	"k8s.io/kops/upup/pkg/fi/fitasks"
 )
 
 const (
@@ -73,8 +71,12 @@ func (b *APILoadBalancerModelBuilder) Build(c *fi.ModelBuilderContext) error {
 
 		switch lbSpec.Type {
 		case kops.LoadBalancerTypeInternal:
-			return errors.New("internal LoadBalancers are not yet supported by kops on ALI")
-			//loadbalancer.AddressType = s("intranet")
+			utilitySubnets := b.GetUtilitySubnets()
+			if len(utilitySubnets) == 0 {
+				return errors.New("internal loadbalancer requires at least 1 utility subnet")
+			}
+			loadbalancer.AddressType = s("intranet")
+			loadbalancer.VSwitchId = fi.String(utilitySubnets[0].ProviderID)
 		case kops.LoadBalancerTypePublic:
 			loadbalancer.AddressType = s("internet")
 		default:
@@ -102,41 +104,35 @@ func (b *APILoadBalancerModelBuilder) Build(c *fi.ModelBuilderContext) error {
 		c.AddTask(loadbalancerlistener)
 	}
 
-	// Create LoadBalancerWhiteList for API ELB
-	var loadbalancerwhiteList *alitasks.LoadBalancerWhiteList
+	// Allow traffic into the SLB from KubernetesAPIAccess CIDRs
+	var loadBalancerACL *alitasks.LoadBalancerACL
 	{
 
-		sourceItems := ""
-		var cidrs []string
+		var cidrs []*string
 		for _, cidr := range b.Cluster.Spec.KubernetesAPIAccess {
 			if cidr != "0.0.0.0" && cidr != "0.0.0.0/0" {
-				cidrs = append(cidrs, cidr)
+				cc := cidr
+				cidrs = append(cidrs, &cc)
 			}
 		}
-		sourceItems = strings.Join(cidrs, ",")
 
-		loadbalancerwhiteList = &alitasks.LoadBalancerWhiteList{
-			Name:                 s("api." + b.ClusterName()),
-			Lifecycle:            b.Lifecycle,
-			LoadBalancer:         loadbalancer,
-			LoadBalancerListener: loadbalancerlistener,
-			SourceItems:          s(sourceItems),
+		if len(cidrs) != 0 {
+			loadBalancerACL = &alitasks.LoadBalancerACL{
+				Name:                 s("api." + b.ClusterName()),
+				Lifecycle:            b.Lifecycle,
+				LoadBalancer:         loadbalancer,
+				LoadBalancerListener: loadbalancerlistener,
+				SourceItems:          cidrs,
+			}
+			c.AddTask(loadBalancerACL)
 		}
-		c.AddTask(loadbalancerwhiteList)
-
 	}
 
 	// Temporarily do not know the role of the following function
 	if dns.IsGossipHostname(b.Cluster.Name) || b.UsePrivateDNS() {
 		// Ensure the ELB hostname is included in the TLS certificate,
 		// if we're not going to use an alias for it
-		// TODO: I don't love this technique for finding the task by name & modifying it
-		masterKeypairTask, found := c.Tasks["Keypair/master"]
-		if !found {
-			return errors.New("keypair/master task not found")
-		}
-		masterKeypair := masterKeypairTask.(*fitasks.Keypair)
-		masterKeypair.AlternateNameTasks = append(masterKeypair.AlternateNameTasks, loadbalancer)
+		loadbalancer.ForAPIServer = true
 	}
 
 	return nil

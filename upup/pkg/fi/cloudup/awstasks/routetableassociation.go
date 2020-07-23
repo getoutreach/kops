@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -187,8 +187,8 @@ func (_ *RouteTableAssociation) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *
 }
 
 type terraformRouteTableAssociation struct {
-	SubnetID     *terraform.Literal `json:"subnet_id"`
-	RouteTableID *terraform.Literal `json:"route_table_id"`
+	SubnetID     *terraform.Literal `json:"subnet_id" cty:"subnet_id"`
+	RouteTableID *terraform.Literal `json:"route_table_id" cty:"route_table_id"`
 }
 
 func (_ *RouteTableAssociation) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *RouteTableAssociation) error {

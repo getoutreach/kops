@@ -4,15 +4,15 @@
 
 Kops used to only support Google Cloud DNS and Amazon Route53 to provision a kubernetes cluster. But since 1.6.2 `gossip` has been added which make it possible to provision a cluster without one of those DNS providers. Thanks to `gossip`, it's officially supported to provision a fully-functional kubernetes cluster in AWS China Region [which doesn't have Route53 so far][1] since [1.7][2]. Should support both `cn-north-1` and `cn-northwest-1`, but only `cn-north-1` is tested.
 
-Most of the following procedures to provision a cluster are the same with [the guide to use kops in AWS](aws.md). The differences will be highlighted and the similar parts will be omitted.
+Most of the following procedures to provision a cluster are the same with [the guide to use kops in AWS](getting_started/aws.md). The differences will be highlighted and the similar parts will be omitted.
 
-*NOTE: THE FOLLOWING PROCEDURES ARE ONLY TESTED WITH KOPS 1.10.0, 1.10.1 AND KUBERNETES 1.9.11, 1.10.12* 
+*NOTE: THE FOLLOWING PROCEDURES ARE ONLY TESTED WITH KOPS 1.10.0, 1.10.1 AND KUBERNETES 1.9.11, 1.10.12*
 
-### [Install kops](aws.md#install-kops)
+### [Install kops](getting_started/aws.md#install-kops)
 
-### [Install kubectl](aws.md#install-kubectl)
+### [Install kubectl](getting_started/aws.md#install-kubectl)
 
-### [Setup your environment](aws.md#setup-your-environment)
+### [Setup your environment](getting_started/aws.md#setup-your-environment)
 
 #### AWS
 
@@ -27,27 +27,27 @@ Default output format [None]:
 
 And export it correctly.
 
-```console
+```shell
 export AWS_REGION=$(aws configure get region)
 ```
 
-## [Configure DNS](aws.md#configure-dns)
+## [Configure DNS](getting_started/aws.md#configure-dns)
 
 As the note kindly pointing out, a gossip-based cluster can be easily created by having the cluster name end with `.k8s.local`. We will adopt this trick below. Rest of this section can be skipped safely.
 
-## [Testing your DNS setup](aws.md#testing-your-dns-setup)
+## [Testing your DNS setup](getting_started/aws.md#testing-your-dns-setup)
 
 Thanks to `gossip`, this section can be skipped safely as well.
 
-## [Cluster State storage](aws.md#cluster-state-storage)
+## [Cluster State storage](getting_started/aws.md#cluster-state-storage)
 
 Since we are provisioning a cluster in AWS China Region, we need to create a dedicated S3 bucket in AWS China Region.
 
-```console
+```shell
 aws s3api create-bucket --bucket prefix-example-com-state-store --create-bucket-configuration LocationConstraint=$AWS_REGION
 ```
 
-## [Creating your first cluster](aws.md#creating-your-first-cluster)
+## [Creating your first cluster](getting_started/aws.md#creating-your-first-cluster)
 
 ### Ensure you have a VPC which can access the internet NORMALLY
 
@@ -55,7 +55,7 @@ First of all, we have to solve the slow and unstable connection to the internet 
 
 ### Prepare kops ami
 
-We have to build our own AMI because there is [no official kops ami in AWS China Regions][3]. There're two ways to accomplish so. 
+We have to build our own AMI because there is [no official kops ami in AWS China Regions][3]. There're two ways to accomplish so.
 
 #### ImageBuilder **RECOMMENDED**
 
@@ -63,7 +63,7 @@ First, launch an instance in a private subnet which accesses the internet fast a
 
 Because the instance launched in a private subnet, we need to ensure it can be connected by using the private ip via a VPN or a bastion.
 
-```console
+```shell
 SUBNET_ID=<subnet id> # a private subnet
 SECURITY_GROUP_ID=<security group id>
 KEY_NAME=<key pair name on aws>
@@ -75,7 +75,7 @@ aws ec2 create-tags --resources ${INSTANCE_ID} --tags Key=k8s.io/role/imagebuild
 
 Now follow the documentation of [ImageBuilder][4] in `kube-deploy` to build the image.
 
-```console
+```shell
 go get k8s.io/kube-deploy/imagebuilder
 cd ${GOPATH}/src/k8s.io/kube-deploy/imagebuilder
 
@@ -99,26 +99,26 @@ Following [the comment][5] to copy the kops image from another region, e.g. `ap-
 
 No matter how to build the AMI, we get an AMI finally, e.g. `k8s-1.9-debian-jessie-amd64-hvm-ebs-2018-07-18`.
 
-### [Prepare local environment](aws.md#prepare-local-environment)
+### [Prepare local environment](getting_started/aws.md#prepare-local-environment)
 
 Set up a few environment variables.
 
-```console
+```shell
 export NAME=example.k8s.local
 export KOPS_STATE_STORE=s3://prefix-example-com-state-store
 ```
 
-### [Create cluster configuration](aws.md#create-cluster-configuration)
+### [Create cluster configuration](getting_started/aws.md#create-cluster-configuration)
 
 We will need to note which availability zones are available to us. AWS China (Beijing) Region only has two availability zones. It will have [the same problem][6], like other regions having less than three AZs, that there is no true HA support in two AZs. You can [add more master nodes](#add-more-master-nodes) to improve the reliability in one AZ.
 
-```console
+```shell
 aws ec2 describe-availability-zones
 ```
 
 Below is a `create cluster` command which will create a complete internal cluster [in an existing VPC](run_in_existing_vpc.md). The below command will generate a cluster configuration, but not start building it. Make sure that you have generated SSH key pair before creating the cluster.
 
-```console
+```shell
 VPC_ID=<vpc id>
 VPC_NETWORK_CIDR=<vpc network cidr> # e.g. 172.30.0.0/16
 AMI=<owner id/ami name> # e.g. 123456890/k8s-1.9-debian-jessie-amd64-hvm-ebs-2018-07-18
@@ -135,11 +135,11 @@ kops create cluster \
     ${NAME}
 ```
 
-### [Customize Cluster Configuration](aws.md#prepare-local-environment)
+### [Customize Cluster Configuration](getting_started/aws.md#prepare-local-environment)
 
 Now we have a cluster configuration, we adjust the subnet config to reuse [shared subnets](run_in_existing_vpc.md#shared-subnets) by editing the description.
 
-```console
+```shell
 kops edit cluster $NAME
 ```
 
@@ -169,13 +169,13 @@ spec:
 
 Please note that this mirror *MIGHT BE* not suitable for some cases. It's can be replaced by any other registry mirror as long as it's compatible with the docker api.
 
-### [Build the Cluster](aws.md#build-the-cluster)
+### [Build the Cluster](getting_started/aws.md#build-the-cluster)
 
-### [Use the Cluster](aws.md#use-the-cluster)
+### [Use the Cluster](getting_started/aws.md#use-the-cluster)
 
-### [Delete the Cluster](aws.md#delete-the-cluster)
+### [Delete the Cluster](getting_started/aws.md#delete-the-cluster)
 
-## [What's next?](aws.md#whats-next)
+## [What's next?](getting_started/aws.md#whats-next)
 
 ### Add more master nodes
 
@@ -183,14 +183,14 @@ Please note that this mirror *MIGHT BE* not suitable for some cases. It's can be
 
 To achieve this, we can add more parameters to `kops create cluster`.
 
-```console
+```shell
   --master-zones ${AWS_REGION}a --master-count 3 \
   --zones ${AWS_REGION}a --node-count 2 \
 ```
 
 #### In two AZs
 
-```console
+```shell
   --master-zones ${AWS_REGION}a,${AWS_REGION}b --master-count 3 \
   --zones ${AWS_REGION}a,${AWS_REGION}b --node-count 2 \
 ```
@@ -201,7 +201,7 @@ To achieve this, we can add more parameters to `kops create cluster`.
 
 Here is a naive, uncompleted attempt to provision a cluster in a way minimizing the requirements to the internet because even with some kind of proxies or VPN it's still not that fast and it's always much more expensive than downloading from S3.
 
-```console
+```shell
 ## Setup vars
 
 KUBERNETES_VERSION=$(curl -fsSL --retry 5 "https://dl.k8s.io/release/stable.txt")
@@ -241,7 +241,6 @@ done
 KOPS_ASSETS=(
   "images/protokube.tar.gz"
   "linux/amd64/nodeup"
-  "linux/amd64/utils.tar.gz"
 )
 for asset in "${KOPS_ASSETS[@]}"; do
   kops_path="kops/$KOPS_VERSION/$asset"
@@ -249,7 +248,7 @@ for asset in "${KOPS_ASSETS[@]}"; do
   mkdir -p "$dir"
   url="https://kubeupv2.s3.amazonaws.com/kops/$KOPS_VERSION/$asset"
   wget -P "$dir" "$url"
-  wget -P "$dir" "$url.sha1"
+  wget -P "$dir" "$url.sha256"
 done
 
 ## Upload assets
@@ -277,7 +276,7 @@ aws configure set default.s3.multipart_threshold $AWS_S3_DEFAULT_MULTIPART_THRES
 
 When create the cluster, add these parameters to the command line.
 
-```console
+```shell
   --kubernetes-version https://s3.cn-north-1.amazonaws.com.cn/$ASSET_BUCKET/kubernetes/release/$KUBERNETES_VERSION
 ```
 

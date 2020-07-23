@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,30 +17,26 @@ limitations under the License.
 package model
 
 import (
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"fmt"
 	"path"
 	"path/filepath"
-	"strings"
-	"time"
+
+	"k8s.io/kops/pkg/model/components"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"k8s.io/klog"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apiserver/pkg/authentication/user"
-
+	"k8s.io/klog"
 	"k8s.io/kops/nodeup/pkg/distros"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/flagbuilder"
-	"k8s.io/kops/pkg/pki"
+	"k8s.io/kops/pkg/nodelabels"
+	"k8s.io/kops/pkg/rbac"
 	"k8s.io/kops/pkg/systemd"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
 	"k8s.io/kops/upup/pkg/fi/nodeup/nodetasks"
-	"k8s.io/kops/util/pkg/reflectutils"
 )
 
 const (
@@ -113,11 +109,10 @@ func (b *KubeletBuilder) Build(c *fi.ModelBuilderContext) error {
 			if b.IsMaster {
 				klog.V(3).Info("kubelet bootstrap tokens are enabled and running on a master")
 
-				task, err := b.buildMasterKubeletKubeconfig()
+				err := b.buildMasterKubeletKubeconfig(c)
 				if err != nil {
 					return err
 				}
-				c.AddTask(task)
 			}
 		} else {
 			kubeconfig, err := b.BuildPKIKubeconfig("kubelet")
@@ -134,15 +129,11 @@ func (b *KubeletBuilder) Build(c *fi.ModelBuilderContext) error {
 		}
 	}
 
-	if b.UsesCNI() {
+	if components.UsesCNI(b.Cluster.Spec.Networking) {
 		c.AddTask(&nodetasks.File{
 			Path: b.CNIConfDir(),
 			Type: nodetasks.FileType_Directory,
 		})
-	}
-
-	if err := b.addStaticUtils(c); err != nil {
-		return err
 	}
 
 	if err := b.addContainerizedMounter(c); err != nil {
@@ -157,9 +148,6 @@ func (b *KubeletBuilder) Build(c *fi.ModelBuilderContext) error {
 // kubeletPath returns the path of the kubelet based on distro
 func (b *KubeletBuilder) kubeletPath() string {
 	kubeletCommand := "/usr/local/bin/kubelet"
-	if b.Distribution == distros.DistributionCoreOS {
-		kubeletCommand = "/opt/kubernetes/bin/kubelet"
-	}
 	if b.Distribution == distros.DistributionFlatcar {
 		kubeletCommand = "/opt/kubernetes/bin/kubelet"
 	}
@@ -188,11 +176,9 @@ func (b *KubeletBuilder) buildSystemdEnvironmentFile(kubeletConfig *kops.Kubelet
 
 	if kubeletConfig.ExperimentalAllowedUnsafeSysctls != nil {
 		// The ExperimentalAllowedUnsafeSysctls flag was renamed in k/k #63717
-		if b.IsKubernetesGTE("1.11") {
-			klog.V(1).Info("ExperimentalAllowedUnsafeSysctls was renamed in k8s 1.11+, please use AllowedUnsafeSysctls instead.")
-			kubeletConfig.AllowedUnsafeSysctls = append(kubeletConfig.ExperimentalAllowedUnsafeSysctls, kubeletConfig.AllowedUnsafeSysctls...)
-			kubeletConfig.ExperimentalAllowedUnsafeSysctls = nil
-		}
+		klog.V(1).Info("ExperimentalAllowedUnsafeSysctls was renamed in k8s 1.11+, please use AllowedUnsafeSysctls instead.")
+		kubeletConfig.AllowedUnsafeSysctls = append(kubeletConfig.ExperimentalAllowedUnsafeSysctls, kubeletConfig.AllowedUnsafeSysctls...)
+		kubeletConfig.ExperimentalAllowedUnsafeSysctls = nil
 	}
 
 	// TODO: Dump the separate file for flags - just complexity!
@@ -209,11 +195,6 @@ func (b *KubeletBuilder) buildSystemdEnvironmentFile(kubeletConfig *kops.Kubelet
 		flags += " --cloud-config=" + CloudConfigFilePath
 	}
 
-	if b.UsesCNI() {
-		flags += " --cni-bin-dir=" + b.CNIBinDir()
-		flags += " --cni-conf-dir=" + b.CNIConfDir()
-	}
-
 	if b.UsesSecondaryIP() {
 		sess := session.Must(session.NewSession())
 		metadata := ec2metadata.New(sess)
@@ -224,19 +205,24 @@ func (b *KubeletBuilder) buildSystemdEnvironmentFile(kubeletConfig *kops.Kubelet
 		flags += " --node-ip=" + localIpv4
 	}
 
-	if b.Cluster.Spec.Networking != nil && b.Cluster.Spec.Networking.Kubenet != nil {
-		// Kubenet is neither CNI nor not-CNI, so we need to pass it `--cni-bin-dir` also
-		if b.IsKubernetesGTE("1.9") {
-			// Flag renamed in #53564
-			flags += " --cni-bin-dir=" + b.CNIBinDir()
-		} else {
-			flags += " --network-plugin-dir=" + b.CNIBinDir()
-		}
-	}
-
 	if b.usesContainerizedMounter() {
 		// We don't want to expose this in the model while it is experimental, but it is needed on COS
 		flags += " --experimental-mounter-path=" + path.Join(containerizedMounterHome, "mounter")
+	}
+
+	// Add container runtime spcific flags
+	switch b.Cluster.Spec.ContainerRuntime {
+	case "docker", "":
+		flags += " --cni-bin-dir=" + b.CNIBinDir()
+		flags += " --cni-conf-dir=" + b.CNIConfDir()
+	case "containerd":
+		flags += " --container-runtime=remote"
+		flags += " --runtime-request-timeout=15m"
+		if b.Cluster.Spec.Containerd == nil || b.Cluster.Spec.Containerd.Address == nil {
+			flags += " --container-runtime-endpoint=unix:///run/containerd/containerd.sock"
+		} else {
+			flags += " --container-runtime-endpoint=unix://" + fi.StringValue(b.Cluster.Spec.Containerd.Address)
+		}
 	}
 
 	sysconfig := "DAEMON_ARGS=\"" + flags + "\"\n"
@@ -259,16 +245,15 @@ func (b *KubeletBuilder) buildSystemdService() *nodetasks.Service {
 	manifest := &systemd.Manifest{}
 	manifest.Set("Unit", "Description", "Kubernetes Kubelet Server")
 	manifest.Set("Unit", "Documentation", "https://github.com/kubernetes/kubernetes")
-	manifest.Set("Unit", "After", "docker.service")
+	switch b.Cluster.Spec.ContainerRuntime {
+	case "docker":
+		manifest.Set("Unit", "After", "docker.service")
+	case "containerd":
+		manifest.Set("Unit", "After", "containerd.service")
+	default:
+		klog.Warningf("unknown container runtime %q", b.Cluster.Spec.ContainerRuntime)
+	}
 
-	if b.Distribution == distros.DistributionCoreOS {
-		// We add /opt/kubernetes/bin for our utilities (socat, conntrack)
-		manifest.Set("Service", "Environment", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/kubernetes/bin")
-	}
-	if b.Distribution == distros.DistributionFlatcar {
-		// We add /opt/kubernetes/bin for our utilities (conntrack)
-		manifest.Set("Service", "Environment", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/kubernetes/bin")
-	}
 	manifest.Set("Service", "EnvironmentFile", "/etc/sysconfig/kubelet")
 
 	// @check if we are using bootstrap tokens and file checker
@@ -294,11 +279,6 @@ func (b *KubeletBuilder) buildSystemdService() *nodetasks.Service {
 		Definition: s(manifestString),
 	}
 
-	// @check if we are a master allow protokube to start kubelet
-	if b.IsMaster {
-		service.Running = fi.Bool(false)
-	}
-
 	service.InitDefaults()
 
 	return service
@@ -317,58 +297,6 @@ func (b *KubeletBuilder) buildKubeletConfig() (*kops.KubeletConfigSpec, error) {
 
 	// TODO: Memoize if we reuse this
 	return kubeletConfigSpec, nil
-}
-
-func (b *KubeletBuilder) addStaticUtils(c *fi.ModelBuilderContext) error {
-	if b.Distribution == distros.DistributionCoreOS {
-		// CoreOS does not ship with socat or conntrack.  Install our own (statically linked) version
-		// TODO: Extract to common function?
-		for _, binary := range []string{"socat", "conntrack"} {
-			assetName := binary
-			assetPath := ""
-			asset, err := b.Assets.Find(assetName, assetPath)
-			if err != nil {
-				return fmt.Errorf("error trying to locate asset %q: %v", assetName, err)
-			}
-			if asset == nil {
-				return fmt.Errorf("unable to locate asset %q", assetName)
-			}
-
-			t := &nodetasks.File{
-				Path:     "/opt/kubernetes/bin/" + binary,
-				Contents: asset,
-				Type:     nodetasks.FileType_File,
-				Mode:     s("0755"),
-			}
-			c.AddTask(t)
-		}
-	}
-
-	if b.Distribution == distros.DistributionFlatcar {
-		// Flatcar does not ship with conntrack.  Install our own (statically linked) version
-		// TODO: Extract to common function?
-		for _, binary := range []string{"conntrack"} {
-			assetName := binary
-			assetPath := ""
-			asset, err := b.Assets.Find(assetName, assetPath)
-			if err != nil {
-				return fmt.Errorf("error trying to locate asset %q: %v", assetName, err)
-			}
-			if asset == nil {
-				return fmt.Errorf("unable to locate asset %q", assetName)
-			}
-
-			t := &nodetasks.File{
-				Path:     "/opt/kubernetes/bin/" + binary,
-				Contents: asset,
-				Type:     nodetasks.FileType_File,
-				Mode:     s("0755"),
-			}
-			c.AddTask(t)
-		}
-	}
-
-	return nil
 }
 
 // usesContainerizedMounter returns true if we use the containerized mounter
@@ -397,10 +325,6 @@ func (b *KubeletBuilder) addContainerizedMounter(c *fi.ModelBuilderContext) erro
 	{
 		// @TODO Extract to common function?
 		assetName := "mounter"
-		if !b.IsKubernetesGTE("1.9") {
-			// legacy name (and stored in kubernetes-manifests.tar.gz)
-			assetName = "gci-mounter"
-		}
 		assetPath := ""
 		asset, err := b.Assets.Find(assetName, assetPath)
 		if err != nil {
@@ -428,7 +352,7 @@ func (b *KubeletBuilder) addContainerizedMounter(c *fi.ModelBuilderContext) erro
 	c.AddTask(&nodetasks.Archive{
 		Name:      "containerized_mounter",
 		Source:    "https://storage.googleapis.com/kubernetes-release/gci-mounter/mounter.tar",
-		Hash:      "8003b798cf33c7f91320cd6ee5cec4fa22244571",
+		Hash:      "6a9f5f52e0b066183e6b90a3820b8c2c660d30f6ac7aeafb5064355bf0a5b6dd",
 		TargetDir: path.Join(containerizedMounterHome, "rootfs"),
 	})
 
@@ -472,16 +396,6 @@ func (b *KubeletBuilder) addContainerizedMounter(c *fi.ModelBuilderContext) erro
 	return nil
 }
 
-const (
-	RoleLabelName15        = "kubernetes.io/role"
-	RoleLabelName16        = "kubernetes.io/role"
-	RoleMasterLabelValue15 = "master"
-	RoleNodeLabelValue15   = "node"
-
-	RoleLabelMaster16 = "node-role.kubernetes.io/master"
-	RoleLabelNode16   = "node-role.kubernetes.io/node"
-)
-
 // NodeLabels are defined in the InstanceGroup, but set flags on the kubelet config.
 // We have a conflict here: on the one hand we want an easy to use abstract specification
 // for the cluster, on the other hand we don't want two fields that do the same thing.
@@ -494,28 +408,43 @@ const (
 
 // buildKubeletConfigSpec returns the kubeletconfig for the specified instanceGroup
 func (b *KubeletBuilder) buildKubeletConfigSpec() (*kops.KubeletConfigSpec, error) {
-	// Merge KubeletConfig for NodeLabels
-	c := &kops.KubeletConfigSpec{}
-	if b.InstanceGroup.Spec.Role == kops.InstanceGroupRoleMaster {
-		reflectutils.JsonMergeStruct(c, b.Cluster.Spec.MasterKubelet)
-	} else {
-		reflectutils.JsonMergeStruct(c, b.Cluster.Spec.Kubelet)
-	}
+	isMaster := b.IsMaster
 
-	// @check if we are using secure kubelet <-> api settings
+	// Merge KubeletConfig for NodeLabels
+	c := b.NodeupConfig.KubeletConfig
+
+	// check if we are using secure kubelet <-> api settings
 	if b.UseSecureKubelet() {
-		// @TODO these filenames need to be a constant somewhere
 		c.ClientCAFile = filepath.Join(b.PathSrvKubernetes(), "ca.crt")
 	}
 
-	if b.IsMaster {
+	if isMaster {
 		c.BootstrapKubeconfig = ""
 	}
 
 	if b.Cluster.Spec.Networking != nil && b.Cluster.Spec.Networking.AmazonVPC != nil {
-		instanceType, err := awsup.GetMachineTypeInfo(strings.Split(b.InstanceGroup.Spec.MachineType, ",")[0])
+		sess := session.Must(session.NewSession())
+		metadata := ec2metadata.New(sess)
+
+		// Get the actual instance type by querying the EC2 instance metadata service.
+		instanceTypeName, err := metadata.GetMetadata("instance-type")
 		if err != nil {
-			return c, err
+			// Otherwise, fall back to the Instance Group spec.
+			instanceTypeName = *b.NodeupConfig.DefaultMachineType
+		}
+
+		region, err := awsup.FindRegion(b.Cluster)
+		if err != nil {
+			return nil, err
+		}
+		awsCloud, err := awsup.NewAWSCloud(region, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Get the instance type's detailed information.
+		instanceType, err := awsup.GetMachineTypeInfo(awsCloud, instanceTypeName)
+		if err != nil {
+			return nil, err
 		}
 
 		// Default maximum pods per node defined by KubeletConfiguration, but
@@ -541,54 +470,17 @@ func (b *KubeletBuilder) buildKubeletConfigSpec() (*kops.KubeletConfigSpec, erro
 
 		// Write back values that could have changed
 		c.MaxPods = &maxPods
-		if b.InstanceGroup.Spec.Kubelet != nil {
-			if b.InstanceGroup.Spec.Kubelet.MaxPods == nil {
-				b.InstanceGroup.Spec.Kubelet.MaxPods = &maxPods
-			}
-		}
 	}
 
-	if b.InstanceGroup.Spec.Kubelet != nil {
-		reflectutils.JsonMergeStruct(c, b.InstanceGroup.Spec.Kubelet)
-	}
-
-	if b.InstanceGroup.Spec.Role == kops.InstanceGroupRoleMaster {
-		if c.NodeLabels == nil {
-			c.NodeLabels = make(map[string]string)
-		}
-		c.NodeLabels[RoleLabelMaster16] = ""
-		c.NodeLabels[RoleLabelName15] = RoleMasterLabelValue15
-	} else {
-		if c.NodeLabels == nil {
-			c.NodeLabels = make(map[string]string)
-		}
-		c.NodeLabels[RoleLabelNode16] = ""
-		c.NodeLabels[RoleLabelName15] = RoleNodeLabelValue15
-	}
-
-	for k, v := range b.InstanceGroup.Spec.NodeLabels {
-		if c.NodeLabels == nil {
-			c.NodeLabels = make(map[string]string)
-		}
-		c.NodeLabels[k] = v
-	}
-
-	// Use --register-with-taints for k8s 1.6 and on
-	if b.IsKubernetesGTE("1.6") {
-		for _, t := range b.InstanceGroup.Spec.Taints {
-			c.Taints = append(c.Taints, t)
-		}
-
-		if len(c.Taints) == 0 && b.IsMaster {
+	// Use --register-with-taints
+	{
+		if len(c.Taints) == 0 && isMaster {
 			// (Even though the value is empty, we still expect <Key>=<Value>:<Effect>)
-			c.Taints = append(c.Taints, RoleLabelMaster16+"=:"+string(v1.TaintEffectNoSchedule))
+			c.Taints = append(c.Taints, nodelabels.RoleLabelMaster16+"=:"+string(v1.TaintEffectNoSchedule))
 		}
 
 		// Enable scheduling since it can be controlled via taints.
-		// For pre-1.6.0 clusters, this is handled by tainter.go
 		c.RegisterSchedulable = fi.Bool(true)
-	} else {
-		// For 1.5 and earlier, protokube will taint the master
 	}
 
 	if c.VolumePluginDirectory == "" {
@@ -597,8 +489,8 @@ func (b *KubeletBuilder) buildKubeletConfigSpec() (*kops.KubeletConfigSpec, erro
 			// Default is different on ContainerOS, see https://github.com/kubernetes/kubernetes/pull/58171
 			c.VolumePluginDirectory = "/home/kubernetes/flexvolume/"
 
-		case distros.DistributionCoreOS:
-			// The /usr directory is read-only for CoreOS
+		case distros.DistributionFlatcar:
+			// The /usr directory is read-only for Flatcar
 			c.VolumePluginDirectory = "/var/lib/kubelet/volumeplugins/"
 
 		default:
@@ -606,90 +498,42 @@ func (b *KubeletBuilder) buildKubeletConfigSpec() (*kops.KubeletConfigSpec, erro
 		}
 	}
 
-	return c, nil
+	// In certain configurations systemd-resolved will put the loopback address 127.0.0.53 as a nameserver into /etc/resolv.conf
+	// https://github.com/coredns/coredns/blob/master/plugin/loop/README.md#troubleshooting-loops-in-kubernetes-clusters
+	if c.ResolverConfig == nil {
+		if b.Distribution == distros.DistributionBionic || b.Distribution == distros.DistributionFocal {
+			c.ResolverConfig = s("/run/systemd/resolve/resolv.conf")
+		}
+	}
+
+	// As of 1.16 we can no longer set critical labels.
+	// kops-controller will set these labels.
+	// For bootstrapping reasons, protokube sets the critical labels for kops-controller to run.
+	if b.Cluster.IsKubernetesGTE("1.16") {
+		c.NodeLabels = nil
+	}
+
+	return &c, nil
 }
 
 // buildMasterKubeletKubeconfig builds a kubeconfig for the master kubelet, self-signing the kubelet cert
-func (b *KubeletBuilder) buildMasterKubeletKubeconfig() (*nodetasks.File, error) {
+func (b *KubeletBuilder) buildMasterKubeletKubeconfig(c *fi.ModelBuilderContext) error {
 	nodeName, err := b.NodeName()
 	if err != nil {
-		return nil, fmt.Errorf("error getting NodeName: %v", err)
+		return fmt.Errorf("error getting NodeName: %v", err)
 	}
-
-	caCert, err := b.KeyStore.FindCert(fi.CertificateId_CA)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching CA certificate from keystore: %v", err)
-	}
-	if caCert == nil {
-		return nil, fmt.Errorf("unable to find CA certificate %q in keystore", fi.CertificateId_CA)
-	}
-
-	caKey, err := b.KeyStore.FindPrivateKey(fi.CertificateId_CA)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching CA certificate from keystore: %v", err)
-	}
-	if caKey == nil {
-		return nil, fmt.Errorf("unable to find CA key %q in keystore", fi.CertificateId_CA)
-	}
-
-	privateKey, err := pki.GeneratePrivateKey()
-	if err != nil {
-		return nil, err
-	}
-
-	template := &x509.Certificate{
-		BasicConstraintsValid: true,
-		IsCA:                  false,
-	}
-
-	template.Subject = pkix.Name{
+	certName := nodetasks.PKIXName{
 		CommonName:   fmt.Sprintf("system:node:%s", nodeName),
-		Organization: []string{user.NodesGroup},
+		Organization: []string{rbac.NodesGroup},
 	}
 
-	// https://tools.ietf.org/html/rfc5280#section-4.2.1.3
-	//
-	// Digital signature allows the certificate to be used to verify
-	// digital signatures used during TLS negotiation.
-	template.KeyUsage = template.KeyUsage | x509.KeyUsageDigitalSignature
-	// KeyEncipherment allows the cert/key pair to be used to encrypt
-	// keys, including the symmetric keys negotiated during TLS setup
-	// and used for data transfer.
-	template.KeyUsage = template.KeyUsage | x509.KeyUsageKeyEncipherment
-	// ClientAuth allows the cert to be used by a TLS client to
-	// authenticate itself to the TLS server.
-	template.ExtKeyUsage = append(template.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
-
-	t := time.Now().UnixNano()
-	template.SerialNumber = pki.BuildPKISerial(t)
-
-	certificate, err := pki.SignNewCertificate(privateKey, template, caCert.Certificate, caKey)
-	if err != nil {
-		return nil, fmt.Errorf("error signing certificate for master kubelet: %v", err)
-	}
-
-	caBytes, err := caCert.AsBytes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get certificate authority data: %s", err)
-	}
-	certBytes, err := certificate.AsBytes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get certificate data: %s", err)
-	}
-	keyBytes, err := privateKey.AsBytes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get private key data: %s", err)
-	}
-
-	content, err := b.BuildKubeConfig("kubelet", caBytes, certBytes, keyBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return &nodetasks.File{
+	kubeconfig := b.BuildIssuedKubeconfig("kubelet", certName, c)
+	c.AddTask(&nodetasks.File{
 		Path:     b.KubeletKubeConfig(),
-		Contents: fi.NewStringResource(content),
+		Contents: kubeconfig,
 		Type:     nodetasks.FileType_File,
 		Mode:     s("600"),
-	}, nil
+	})
+
+	return nil
 }

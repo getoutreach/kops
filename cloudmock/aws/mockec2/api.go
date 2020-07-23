@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -55,7 +55,8 @@ type MockEC2 struct {
 
 	InternetGateways map[string]*ec2.InternetGateway
 
-	LaunchTemplates map[string]*ec2.ResponseLaunchTemplateData
+	launchTemplateNumber int
+	LaunchTemplates      map[string]*launchTemplateInfo
 
 	NatGateways map[string]*ec2.NatGateway
 
@@ -96,6 +97,9 @@ func (m *MockEC2) All() map[string]interface{} {
 		all[id] = o
 	}
 	for id, o := range m.InternetGateways {
+		all[id] = o
+	}
+	for id, o := range m.LaunchTemplates {
 		all[id] = o
 	}
 	for id, o := range m.NatGateways {

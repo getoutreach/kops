@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,13 +17,12 @@ limitations under the License.
 package dotasks
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/digitalocean/godo"
-	"github.com/digitalocean/godo/context"
-
 	"k8s.io/kops/pkg/resources/digitalocean"
 	"k8s.io/kops/upup/pkg/fi"
 )
@@ -73,8 +72,8 @@ func (f fakeStorageClient) DeleteSnapshot(ctx context.Context, id string) (*godo
 
 func newCloud(client *godo.Client) *digitalocean.Cloud {
 	return &digitalocean.Cloud{
-		Client: client,
-		Region: "nyc1",
+		Client:     client,
+		RegionName: "nyc1",
 	}
 }
 

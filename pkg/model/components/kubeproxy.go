@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -85,6 +85,12 @@ func (b *KubeProxyOptionsBuilder) BuildOptions(o interface{}) error {
 	if cloudProvider == kops.CloudProviderDO {
 		if config.HostnameOverride == "" {
 			config.HostnameOverride = "@digitalocean"
+		}
+	}
+
+	if cloudProvider == kops.CloudProviderALI {
+		if config.HostnameOverride == "" {
+			config.HostnameOverride = "@alicloud"
 		}
 	}
 
