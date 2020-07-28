@@ -600,7 +600,6 @@ func findAutoscalingGroupLaunchConfiguration(c AWSCloud, g *autoscaling.Group) (
 			}
 		}
 
-		version := aws.StringValue(g.LaunchTemplate.Version)
 		if name != "" {
 			launchTemplate := name + ":" + version
 			return launchTemplate, nil
