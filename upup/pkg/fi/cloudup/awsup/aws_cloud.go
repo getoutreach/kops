@@ -18,6 +18,7 @@ package awsup
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -573,7 +574,7 @@ func matchesAsgTags(tags map[string]string, actual []*autoscaling.TagDescription
 }
 
 // findAutoscalingGroupLaunchConfiguration is responsible for finding the launch - which could be a launchconfiguration, a template or a mixed instance policy template
-func findAutoscalingGroupLaunchConfiguration(g *autoscaling.Group) (string, error) {
+func findAutoscalingGroupLaunchConfiguration(c AWSCloud, g *autoscaling.Group) (string, error) {
 	name := aws.StringValue(g.LaunchConfigurationName)
 	if name != "" {
 		return name, nil
@@ -582,6 +583,23 @@ func findAutoscalingGroupLaunchConfiguration(g *autoscaling.Group) (string, erro
 	// @check the launch template then
 	if g.LaunchTemplate != nil {
 		name = aws.StringValue(g.LaunchTemplate.LaunchTemplateName)
+		request := &ec2.DescribeLaunchTemplateVersionsInput{
+			LaunchTemplateName: &name,
+		}
+
+		versions, err := c.EC2().DescribeLaunchTemplateVersions(request)
+		if err != nil {
+			return "", fmt.Errorf("error finding versions for launch template: %v", err)
+		}
+
+		var version string
+		for _, v := range versions.LaunchTemplateVersions {
+			if *v.DefaultVersion {
+				version = strconv.FormatInt(*v.VersionNumber, 10)
+				break
+			}
+		}
+
 		version := aws.StringValue(g.LaunchTemplate.Version)
 		if name != "" {
 			launchTemplate := name + ":" + version
@@ -628,7 +646,7 @@ func findInstanceLaunchConfiguration(i *autoscaling.Instance) string {
 }
 
 func awsBuildCloudInstanceGroup(c AWSCloud, ig *kops.InstanceGroup, g *autoscaling.Group, nodeMap map[string]*v1.Node) (*cloudinstances.CloudInstanceGroup, error) {
-	newConfigName, err := findAutoscalingGroupLaunchConfiguration(g)
+	newConfigName, err := findAutoscalingGroupLaunchConfiguration(c, g)
 	if err != nil {
 		return nil, err
 	}
