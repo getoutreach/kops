@@ -238,7 +238,7 @@ data:
   # To enable Typha, set this to "calico-typha" *and* set a non-zero value for Typha replicas
   # below.  We recommend using Typha if you have more than 50 nodes. Above 100 nodes it is
   # essential.
-  typha_service_name: "none"
+  typha_service_name: "calico-typha"
 
   # TODO: Do we want to configure this?
   # Configure the MTU to use
@@ -255,13 +255,12 @@ data:
       "plugins": [
         {
           "type": "calico",
-          "log_level": "info",
+          "log_level": "WARNING",
           "datastore_type": "kubernetes",
           "nodename": "__KUBERNETES_NODE_NAME__",
           "mtu": __CNI_MTU__,
           "ipam": {
-            "type": "host-local",
-            "subnet": "usePodCidr"
+            "type": "calico-ipam"
           },
           "policy": {
             "type": "k8s"
@@ -439,23 +438,86 @@ subjects:
   namespace: kube-system
 ---
 
-# This manifest scales the Calico Kubernetes controllers down to size 0.
-# They are not needed in CRD mode.
+# Include a clusterrole for the kube-controllers component,
+# and bind it to the calico-kube-controllers serviceaccount.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-kube-controllers
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - networkpolicies
+      - nodes
+    verbs:
+      - watch
+      - list
+      - get
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - watch
+      - list
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - ippools
+    verbs:
+      - list
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+      - ipamblocks
+      - ipamhandles
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+  # Needs access to update clusterinformations.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - clusterinformations
+    verbs:
+      - get
+      - create
+      - update
+
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-kube-controllers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-kube-controllers
+subjects:
+- kind: ServiceAccount
+  name: calico-kube-controllers
+  namespace: kube-system
+
+---
+
+# Source: calico/templates/calico-kube-controllers.yaml
 # See https://github.com/projectcalico/kube-controllers
-apiVersion: apps/v1
+apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
   name: calico-kube-controllers
   namespace: kube-system
   labels:
     k8s-app: calico-kube-controllers
-    role.kubernetes.io/networking: "1"
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
 spec:
-  selector:
-    matchLabels:
-      k8s-app: calico-kube-controllers
-  # The controllers can only have a single active instance.
-  replicas: 0
+  # The controller can only have a single active instance.
+  replicas: 1
   strategy:
     type: Recreate
   template:
@@ -464,15 +526,39 @@ spec:
       namespace: kube-system
       labels:
         k8s-app: calico-kube-controllers
-        role.kubernetes.io/networking: "1"
     spec:
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+      tolerations:
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      serviceAccountName: calico-kube-controllers
       containers:
         - name: calico-kube-controllers
-          image: quay.io/calico/kube-controllers:v3.7.4
-      initContainers:
-        - name: migrate
-          image: calico/upgrade:v1.0.5
+          image: calico/kube-controllers:v3.7.4
+          env:
+            # Choose which controllers to run.
+            # Only enabling node for now, will have to look into others if we want to use them
+            - name: ENABLED_CONTROLLERS
+              value: node
+            - name: DATASTORE_TYPE
+              value: kubernetes
+          readinessProbe:
+            exec:
+              command:
+              - /usr/bin/check-status
+              - -r
 
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: calico-kube-controllers
+  namespace: kube-system
 ---
 
 # This manifest installs the calico/node container, as well
@@ -503,6 +589,7 @@ spec:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
       hostNetwork: true
+      priorityClassName: system-cluster-critical
       tolerations:
         # Make sure calico/node gets scheduled on all nodes.
         - effect: NoSchedule
@@ -517,10 +604,37 @@ spec:
       # deletion": https://kubernetes.io/docs/concepts/workloads/pods/pod/#termination-of-pods.
       terminationGracePeriodSeconds: 0
       initContainers:
+        - command:
+          - /opt/cni/bin/calico-ipam
+          - -upgrade
+          env:
+            - name: KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+            - name: CALICO_NETWORKING_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  key: calico_backend
+                  name: calico-config
+          image: gcr.io/outreach-docker/calico/cni:v3.7.4
+          imagePullPolicy: IfNotPresent
+          name: upgrade-ipam
+          resources: {}
+          securityContext:
+            privileged: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/lib/cni/networks
+            name: host-local-net-dir
+          - mountPath: /host/opt/cni/bin
+            name: cni-bin-dir
         # This container installs the Calico CNI binaries
         # and CNI network config file on each node.
         - name: install-cni
-          image: quay.io/calico/cni:v3.7.4
+          image: gcr.io/outreach-docker/calico/cni:v3.7.4
           command: ["/install-cni.sh"]
           env:
             # Name of the CNI config file to create.
@@ -556,7 +670,7 @@ spec:
         # container programs network policy and routes on each
         # host.
         - name: calico-node
-          image: quay.io/calico/node:v3.7.4
+          image: gcr.io/outreach-docker/calico/cni:v3.7.4
           env:
             # Use Kubernetes API as the backing datastore.
             - name: DATASTORE_TYPE
@@ -807,5 +921,175 @@ spec:
             path: "/etc/ssl/certs/ca-certificates.crt"
       nodeSelector:
         node-role.kubernetes.io/master: ""
-{{- end -}}
 
+---
+# Source: calico/templates/calico-typha.yaml
+# This manifest creates a Service, which will be backed by Calico's Typha daemon.
+# Typha sits in between Felix and the API server, reducing Calico's load on the API server.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+spec:
+  ports:
+    - port: 5473
+      protocol: TCP
+      targetPort: calico-typha
+      name: calico-typha
+    - port: 9093
+      protocol: TCP
+      targetPort: metrics
+      name: metrics
+  selector:
+    k8s-app: calico-typha
+
+---
+
+# This manifest creates a Deployment of Typha to back the above service.
+
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+spec:
+  # Number of Typha replicas.  To enable Typha, set this to a non-zero value *and* set the
+  # typha_service_name variable in the calico-config ConfigMap above.
+  #
+  # We recommend using Typha if you have more than 50 nodes.  Above 100 nodes it is essential
+  # (when using the Kubernetes datastore).  Use one replica for every 100-200 nodes.  In
+  # production, we recommend running at least 3 replicas to reduce the impact of rolling upgrade.
+  replicas: 3
+  revisionHistoryLimit: 2
+  template:
+    metadata:
+      labels:
+        k8s-app: calico-typha
+      annotations:
+        # This, along with the CriticalAddonsOnly toleration below, marks the pod as a critical
+        # add-on, ensuring it gets priority scheduling and that its resources are reserved
+        # if it ever gets evicted.
+        scheduler.alpha.kubernetes.io/critical-pod: ''
+        cluster-autoscaler.kubernetes.io/safe-to-evict: 'true'
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: outreach.io/nodepool
+                operator: In
+                values:
+                - stable
+            weight: 100
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+      hostNetwork: true
+      tolerations:
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: dedicated
+          value: stable
+          operator: Equal
+      # Since Calico can't network a pod until Typha is up, we need to run Typha itself
+      # as a host-networked pod.
+      serviceAccountName: calico-node
+      containers:
+      - image: calico/typha:v3.7.4
+        name: calico-typha
+        ports:
+        - containerPort: 5473
+          name: calico-typha
+          protocol: TCP
+        - containerPort: 9093
+          name: metrics
+          protocol: TCP
+        env:
+          # Enable "info" logging by default.  Can be set to "debug" to increase verbosity.
+          - name: TYPHA_LOGSEVERITYSCREEN
+            value: "Error"
+          # Disable logging to file and syslog since those don't make sense in Kubernetes.
+          - name: TYPHA_LOGFILEPATH
+            value: "none"
+          - name: TYPHA_LOGSEVERITYSYS
+            value: "none"
+          # Monitor the Kubernetes API to find the number of running instances and rebalance
+          # connections.
+          - name: TYPHA_CONNECTIONREBALANCINGMODE
+            value: "kubernetes"
+          - name: TYPHA_DATASTORETYPE
+            value: "kubernetes"
+          - name: TYPHA_HEALTHENABLED
+            value: "true"
+          # Uncomment these lines to enable prometheus metrics.  Since Typha is host-networked,
+          # this opens a port on the host, which may need to be secured.
+          - name: TYPHA_PROMETHEUSMETRICSENABLED
+            value: "true"
+          - name: TYPHA_PROMETHEUSMETRICSPORT
+            value: "9093"
+          - name: TYPHA_PROMETHEUSPROCESSMETRICSENABLED
+            value: "true"
+          # Increased to resolve connection limit issue (https://github.com/projectcalico/typha/issues/291)
+          - name: TYPHA_MAXCONNECTIONSLOWERLIMIT
+            value: "1000"
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 9098
+            host: localhost
+          periodSeconds: 30
+          initialDelaySeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 9098
+            host: localhost
+          periodSeconds: 10
+
+---
+
+# This manifest creates a Pod Disruption Budget for Typha to allow K8s Cluster Autoscaler to evict
+
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      k8s-app: calico-typha
+
+# This manifest creates a servicemonitor for Calico Typha for Prometheus to scrape metrics
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: calico-typha
+  namespace: kube-system
+  labels:
+    k8s-app: calico-typha
+    app: calico-typha
+    name: calico-typha
+    prometheus.io/scrape: "true"
+spec:
+  endpoints:
+  - honorLabels: true
+    interval: 15s
+    targetPort: metrics
+  selector:
+    matchLabels:
+      k8s-app: calico-typha
+  targetLabels:
+  - k8s-app
+{{- end -}}
