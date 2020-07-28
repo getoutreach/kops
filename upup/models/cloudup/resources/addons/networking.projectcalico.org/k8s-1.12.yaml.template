@@ -1060,7 +1060,7 @@ spec:
         operator: Exists
       serviceAccountName: k8s-ec2-srcdst
       containers:
-        - image: ottoyiu/k8s-ec2-srcdst:v0.2.2
+        - image: gcr.io/outreach-docker/k8s-ec2-srcdst:v0.2.2
           name: k8s-ec2-srcdst
           resources:
             requests:
