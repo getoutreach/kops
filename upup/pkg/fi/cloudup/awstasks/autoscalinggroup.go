@@ -708,6 +708,10 @@ func (_ *AutoscalingGroup) RenderTerraform(t *terraform.TerraformTarget, a, e, c
 	}
 
 	if e.UseMixedInstancesPolicy() {
+		// Temporary warning until https://github.com/terraform-providers/terraform-provider-aws/issues/9750 is resolved
+		if e.MixedSpotAllocationStrategy == fi.String("capacity-optimized") {
+			fmt.Print("Terraform does not currently support a capacity optimized strategy - please see https://github.com/terraform-providers/terraform-provider-aws/issues/9750")
+		}
 		tf.MixedInstancesPolicy = []*terraformMixedInstancesPolicy{
 			{
 				LaunchTemplate: []*terraformAutoscalingLaunchTemplate{
