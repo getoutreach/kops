@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -31,6 +32,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"k8s.io/klog"
 )
 
@@ -303,6 +305,7 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 				LaunchTemplateName: e.LaunchTemplate.ID,
 			}
 		}
+
 		// @check if we are using mixed instance policies
 		if e.UseMixedInstancesPolicy() {
 			// we can zero this out for now and use the mixed instance policy for definition
@@ -316,7 +319,7 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 					SpotMaxPrice:                        e.MixedSpotMaxPrice,
 				},
 				LaunchTemplate: &autoscaling.LaunchTemplate{
-					LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{LaunchTemplateName: e.LaunchTemplate.ID},
+					LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{LaunchTemplateName: e.LaunchTemplate.ID, Version: aws.String("1")},
 				},
 			}
 			p := request.MixedInstancesPolicy.LaunchTemplate
@@ -378,12 +381,26 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 			return req.MixedInstancesPolicy
 		}
 
+		launchTemplateVersion := "1"
+		if e.LaunchTemplate != nil {
+			dltRequest := &ec2.DescribeLaunchTemplatesInput{
+				LaunchTemplateNames: []*string{e.LaunchTemplate.ID},
+			}
+			dltResponse, err := t.Cloud.EC2().DescribeLaunchTemplates(dltRequest)
+			if err != nil {
+				klog.Warningf("could not find existing LaunchTemplate: %v", err)
+			} else {
+				launchTemplateVersion = strconv.FormatInt(*dltResponse.LaunchTemplates[0].LatestVersionNumber, 10)
+			}
+		}
+
 		if changes.LaunchTemplate != nil {
 			// @note: at the moment we are only using launch templates when using mixed instance policies,
 			// but this might change
 			setup(request).LaunchTemplate = &autoscaling.LaunchTemplate{
 				LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{
 					LaunchTemplateName: changes.LaunchTemplate.ID,
+					Version:            &launchTemplateVersion,
 				},
 			}
 			changes.LaunchTemplate = nil
@@ -414,6 +431,7 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 				setup(request).LaunchTemplate = &autoscaling.LaunchTemplate{
 					LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{
 						LaunchTemplateName: e.LaunchTemplate.ID,
+						Version:            &launchTemplateVersion,
 					},
 				}
 			}
