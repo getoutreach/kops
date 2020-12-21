@@ -131,16 +131,16 @@ ifdef DEBUGGABLE
   GCFLAGS=-gcflags "all=-N -l"
 endif
 
+.PHONY: kops-install # Install kops to local $GOPATH/bin
+kops-install: gobindata-tool ${BINDATA_TARGETS}
+	go install ${GCFLAGS} ${EXTRA_BUILDFLAGS} ${LDFLAGS}"-X k8s.io/kops.Version=${VERSION} -X k8s.io/kops.GitVersion=${GITSHA} ${EXTRA_LDFLAGS}" k8s.io/kops/cmd/kops/
+
 .PHONY: echo-version
 echo-version:
 	echo VERSION ${VERSION}
 	echo KOPS_RELEASE_VERSION ${KOPS_RELEASE_VERSION}
 	echo ALTERNATE VERSION ${KOPS_CI_VERSION}+${GITSHA}
 	env
-
-.PHONY: kops-install # Install kops to local $GOPATH/bin
-kops-install: gobindata-tool ${BINDATA_TARGETS}
-	go install ${GCFLAGS} ${EXTRA_BUILDFLAGS} ${LDFLAGS}"-X k8s.io/kops.Version=${VERSION} -X k8s.io/kops.GitVersion=${GITSHA} ${EXTRA_LDFLAGS}" k8s.io/kops/cmd/kops/
 
 .PHONY: channels-install # Install channels to local $GOPATH/bin
 channels-install: ${CHANNELS}
