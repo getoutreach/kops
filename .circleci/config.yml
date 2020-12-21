@@ -12,25 +12,25 @@ jobs:
     steps:
       - run:
           command: |
-            export GOPATH="$CIRCLE_WORKING_DIRECTORY/gopath"
+            export GOPATH="$HOME/project/gopath"
             mkdir -p "$GOPATH"
 
       - checkout:
-          path: ./gopath/src/k8s.io/kops
+          path: "$HOME/project/gopath/src/k8s.io/kops"
 
       - run:
           command: |
-            export GOPATH="$CIRCLE_WORKING_DIRECTORY/gopath"
+            export GOPATH="$HOME/project/gopath"
             env
 
       - run:
           command: |
-            export GOPATH="$CIRCLE_WORKING_DIRECTORY/gopath"
-            cd $GOPATH/src/k8s.io/kops
+            export GOPATH="$HOME/project/gopath"
+            cd "$GOPATH/src/k8s.io/kops"
             make -d echo-version
 
       - run:
           command: |
-            export GOPATH="$CIRCLE_WORKING_DIRECTORY/gopath"
-            cd $GOPATH/src/k8s.io/kops
+            export GOPATH="$HOME/project/gopath"
+            cd "$GOPATH/src/k8s.io/kops"
             make bazel-crossbuild-nodeup
