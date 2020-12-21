@@ -2,9 +2,13 @@ jobs:
   build:
     machine:
       image: ubuntu-2004:202010-01
+      environment:
+        GOPATH: $CIRCLE_WORKING_DIRECTORY/gopath
     resource_class: medium
     steps:
-      - checkout
+      - checkout:
+        name: $CIRCLE_WORKING_DIRECTORY/gopath/src/k8s.io/kops
+
       - run: find .
 
       - run: make -d echo-version
