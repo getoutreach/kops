@@ -16,7 +16,7 @@ jobs:
             mkdir -p "$GOPATH"
 
       - checkout:
-          path: "$HOME/project/gopath/src/k8s.io/kops"
+          path: "/home/circleci/project/gopath/src/k8s.io/kops"
 
       - run:
           command: |
