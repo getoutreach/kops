@@ -8,7 +8,7 @@ executors:
 
 jobs:
   build:
-    exeuctor: machine-executor
+    executor: machine-executor
     steps:
       - checkout:
           name: $GOPATH/src/k8s.io/kops
