@@ -17,6 +17,7 @@ jobs:
           command: env
           environment:
             GOPATH: "$CIRCLE_WORKING_DIRECTORY/gopath"
+            TEST: "variable"
 
       - run:
           command: make -d echo-version
