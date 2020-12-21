@@ -10,6 +10,11 @@ jobs:
     # value inside each and every command so that it actually sticks.
 
     steps:
+      - run:
+          command: |
+            export GOPATH="$CIRCLE_WORKING_DIRECTORY/gopath"
+            mkdir -p "$GOPATH"
+
       - checkout:
           name: ./gopath/src/k8s.io/kops
 
