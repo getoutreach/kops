@@ -7,9 +7,9 @@ jobs:
       - checkout
       - run: find .
 
-      - make echo-version
+      - run: make echo-version
 
       # Pre-upload build steps.
-      - bazel-crossbuild-nodeup
+      - run: bazel-crossbuild-nodeup
 
 
