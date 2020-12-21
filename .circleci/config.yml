@@ -5,19 +5,18 @@ jobs:
       image: ubuntu-2004:202010-01
     resource_class: medium
 
-    # For some reason it is difficult to set a global override for GOPATH.
-    # For the record, we choose a GOPATH of `$CIRCLE_WORKING_DIRECTORY/gopath`.
-    # We manually reference this in a bunch of places.
+    # It seems like CircleCI doesn't like it when I override GOPATH.  It just
+    # re-overrides my override with its own broken values.  Great.  We set the
+    # value inside each and every command so that it actually sticks.
 
     steps:
       - checkout:
           name: ./gopath/src/k8s.io/kops
 
       - run:
-          command: env
-          environment:
-            GOPATH: "$CIRCLE_WORKING_DIRECTORY/gopath"
-            TEST: "variable"
+          command: |
+            export GOPATH="$CIRCLE_WORKING_DIRECTORY/gopath"
+            env
 
       - run:
           command: make -d echo-version
