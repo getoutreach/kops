@@ -13,7 +13,10 @@ jobs:
       - checkout:
           name: ./gopath/src/k8s.io/kops
 
-      - run: find .
+      - run:
+          command: env
+          environment:
+            GOPATH: "$CIRCLE_WORKING_DIRECTORY/gopath"
 
       - run:
           command: make -d echo-version
