@@ -1,5 +1,6 @@
+version: 2.1
 executors:
-  machine-executor:
+  my-executor:
     machine:
       resource_class: medium
       image: ubuntu-2004:202010-01
@@ -8,7 +9,7 @@ executors:
 
 jobs:
   build:
-    executor: machine-executor
+    executor: my-executor
     steps:
       - checkout:
           name: $GOPATH/src/k8s.io/kops
