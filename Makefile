@@ -757,7 +757,7 @@ push-node-authorizer:
 .PHONY: bazel-protokube-export
 bazel-protokube-export:
 	mkdir -p ${BAZELIMAGES}
-	bazel build --action_env=PROTOKUBE_TAG=${PROTOKUBE_TAG} --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //images:protokube.tar
+	bazel build --incompatible_require_ctx_in_configure_features=false --incompatible_string_join_requires_strings=false --incompatible_disable_deprecated_attr_params=false --host_force_python=PY2 --action_env=PROTOKUBE_TAG=${PROTOKUBE_TAG} --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //images:protokube.tar
 	cp -fp bazel-bin/images/protokube.tar ${BAZELIMAGES}/protokube.tar
 	gzip --force --fast ${BAZELIMAGES}/protokube.tar
 	(${SHASUMCMD} ${BAZELIMAGES}/protokube.tar.gz | cut -d' ' -f1) > ${BAZELIMAGES}/protokube.tar.gz.sha1

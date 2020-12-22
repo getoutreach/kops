@@ -61,7 +61,11 @@ container_pull(
 git_repository(
     name = "distroless",
     remote = "https://github.com/googlecloudplatform/distroless.git",
-    commit = "3585653b2b0d33c3fb369b907ef68df8344fd2ad",
+
+    # This version is one of the few old versions that is not broken by some
+    # now-missing assets.
+    # See https://github.com/GoogleContainerTools/distroless/issues/474.
+    commit = "48dba0a4ace4fcb4fdd8d7e1f7dc1a9ed8b38f7c",
 )
 
 load(
