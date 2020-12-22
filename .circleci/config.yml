@@ -32,5 +32,20 @@ jobs:
       - run:
           command: |
             export GOPATH="$HOME/project/gopath"
+            export S3_BUCKET="s3://outreach-custom-kops-assets"
             cd "$GOPATH/src/k8s.io/kops"
-            make bazel-crossbuild-nodeup
+            make version-dist CI=1
+
+      - run:
+          command: |
+            cd "$GOPATH/src/k8s.io/kops"
+            ./hack/write_aws_creds.sh
+
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            export S3_BUCKET="s3://outreach-custom-kops-assets"
+            cd "$GOPATH/src/k8s.io/kops"
+            #if [[ "${CIRCLE_BRANCH}" == "master" ]]; then
+            make upload CI=1
+            #fi
