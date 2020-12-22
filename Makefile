@@ -682,7 +682,7 @@ bazel-crossbuild-kops:
 
 .PHONY: bazel-crossbuild-nodeup
 bazel-crossbuild-nodeup:
-	bazel build --features=pure --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/nodeup/...
+	bazel build --features=pure --incompatible_require_ctx_in_configure_features=false  --incompatible_disable_deprecated_attr_params=false --incompatible_string_join_requires_strings=false --platforms=@io_bazel_rules_go//go/toolchain:linux_amd64 //cmd/nodeup/...
 
 .PHONY: bazel-crossbuild-protokube
 bazel-crossbuild-protokube:
