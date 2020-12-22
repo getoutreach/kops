@@ -50,3 +50,10 @@ jobs:
             export GOPATH="$HOME/project/gopath"
             cd "$GOPATH/src/k8s.io/kops"
             make bazel-crossbuild-nodeup
+
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            export S3_BUCKET_NAME="outreach-custom-kops-assets"
+            cd "$GOPATH/src/k8s.io/kops"
+            make dev-upload CI=1 UPLOAD_DEST="s3://${S3_BUCKET_NAME}"
