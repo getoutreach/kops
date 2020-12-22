@@ -140,7 +140,6 @@ echo-version:
 	echo VERSION ${VERSION}
 	echo KOPS_RELEASE_VERSION ${KOPS_RELEASE_VERSION}
 	echo ALTERNATE VERSION ${KOPS_CI_VERSION}+${GITSHA}
-	env
 
 .PHONY: channels-install # Install channels to local $GOPATH/bin
 channels-install: ${CHANNELS}
