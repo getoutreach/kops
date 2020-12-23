@@ -54,6 +54,7 @@ jobs:
 
       - run:
           command: |
+            cd "$GOPATH/src/k8s.io/kops"
             ./hack/write_aws_creds.sh
 
       - run:
