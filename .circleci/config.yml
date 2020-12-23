@@ -21,11 +21,6 @@ jobs:
       - run:
           command: |
             export GOPATH="$HOME/project/gopath"
-            env
-
-      - run:
-          command: |
-            export GOPATH="$HOME/project/gopath"
             cd "$GOPATH/src/k8s.io/kops"
             make -d echo-version
 
