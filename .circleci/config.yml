@@ -48,12 +48,13 @@ jobs:
       - run:
           command: |
             export GOPATH="$HOME/project/gopath"
+            export S3_BUCKET="s3://outreach-custom-kops-assets"
             cd "$GOPATH/src/k8s.io/kops"
-            make bazel-crossbuild-nodeup
+            make version-dist CI=1
 
       - run:
           command: |
             export GOPATH="$HOME/project/gopath"
-            export S3_BUCKET_NAME="outreach-custom-kops-assets"
+            export S3_BUCKET="s3://outreach-custom-kops-assets"
             cd "$GOPATH/src/k8s.io/kops"
-            make dev-upload CI=1 UPLOAD_DEST="s3://${S3_BUCKET_NAME}"
+            make upload CI=1 AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}" AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
