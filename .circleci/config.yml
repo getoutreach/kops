@@ -1,0 +1,47 @@
+version: 2.1
+jobs:
+  build:
+    machine:
+      image: ubuntu-2004:202010-01
+    resource_class: medium
+
+    # It seems like CircleCI doesn't like it when I override GOPATH.  It just
+    # re-overrides my override with its own broken values.  Great.  We set the
+    # value inside each and every command so that it actually sticks.
+
+    steps:
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            mkdir -p "$GOPATH"
+
+      - checkout:
+          path: "/home/circleci/project/gopath/src/k8s.io/kops"
+
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            cd "$GOPATH/src/k8s.io/kops"
+            make -d echo-version
+
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            export S3_BUCKET="s3://outreach-custom-kops-assets"
+            cd "$GOPATH/src/k8s.io/kops"
+            make version-dist CI=1
+
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            cd "$GOPATH/src/k8s.io/kops"
+            ./hack/write_aws_creds.sh
+
+      - run:
+          command: |
+            export GOPATH="$HOME/project/gopath"
+            export S3_BUCKET="s3://outreach-custom-kops-assets"
+            cd "$GOPATH/src/k8s.io/kops"
+            #if [[ "${CIRCLE_BRANCH}" == "master" ]]; then
+            make upload CI=1
+            #fi
