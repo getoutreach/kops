@@ -335,6 +335,10 @@ vsphere-version-dist: nodeup-dist protokube-export
 
 .PHONY: upload
 upload: version-dist # Upload kops to S3
+	# S3 doesn't handle + very well so we create a symlink to make
+	# `aws s3 sync` upload a redundant copy to an alternate, safer name.
+	# See also: https://forums.aws.amazon.com/thread.jspa?threadID=55746
+	ln -sf ${UPLOAD}/kops/${VERSION} ${UPLOAD}/kops/$(subst +,-,${VERSION})
 	aws s3 sync --acl public-read ${UPLOAD}/ ${S3_BUCKET}
 
 # gcs-upload builds kops and uploads to GCS
