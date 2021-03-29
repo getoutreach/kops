@@ -117,6 +117,12 @@ endif
 kops-install: gobindata-tool ${BINDATA_TARGETS}
 	go install ${GCFLAGS} ${EXTRA_BUILDFLAGS} ${LDFLAGS}"-X k8s.io/kops.Version=${VERSION} -X k8s.io/kops.GitVersion=${GITSHA} ${EXTRA_LDFLAGS}" k8s.io/kops/cmd/kops/
 
+.PHONY: echo-version
+echo-version:
+	echo VERSION ${VERSION}
+	echo KOPS_RELEASE_VERSION ${KOPS_RELEASE_VERSION}
+	echo ALTERNATE VERSION ${KOPS_CI_VERSION}+${GITSHA}
+
 .PHONY: channels-install # Install channels to local $GOPATH/bin
 channels-install: ${CHANNELS}
 	cp ${CHANNELS} ${GOPATH_1ST}/bin
@@ -328,6 +334,10 @@ vsphere-version-dist: nodeup-dist protokube-export
 
 .PHONY: upload
 upload: version-dist # Upload kops to S3
+	# S3 doesn't handle + very well so we create a symlink to make
+	# `aws s3 sync` upload a redundant copy to an alternate, safer name.
+	# See also: https://forums.aws.amazon.com/thread.jspa?threadID=55746
+	ln -sf ${UPLOAD}/kops/${VERSION} ${UPLOAD}/kops/$(subst +,-,${VERSION})
 	aws s3 sync --acl public-read ${UPLOAD}/ ${S3_BUCKET}
 
 # oss-upload builds kops and uploads to OSS
