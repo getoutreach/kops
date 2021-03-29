@@ -25,7 +25,7 @@ export GOPATH=${KOPS_ROOT}/../../../
 TMP_OUT=$(mktemp -d)
 trap "{ rm -rf ${TMP_OUT}; }" EXIT
 
-GOBIN="${TMP_OUT}" go install ./vendor/github.com/bazelbuild/bazel-gazelle/cmd/gazelle
+GOBIN="${TMP_OUT}" go install -mod=vendor ./vendor/github.com/bazelbuild/bazel-gazelle/cmd/gazelle
 
 # manually remove BUILD file for k8s.io/apimachinery/pkg/util/sets/BUILD if it
 # exists; there is a specific set-gen rule that breaks importing
