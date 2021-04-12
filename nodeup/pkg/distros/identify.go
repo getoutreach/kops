@@ -75,6 +75,12 @@ func FindDistribution(rootfs string) (Distribution, error) {
 			if strings.HasPrefix(line, "CentOS Linux release 7.") {
 				return DistributionCentos7, nil
 			}
+			if strings.HasPrefix(line, "Red Hat Enterprise Linux release 8.") {
+				return DistributionRhel8, nil
+			}
+			if strings.HasPrefix(line, "CentOS Linux release 8.") {
+				return DistributionCentos8, nil
+			}
 		}
 		klog.Warningf("unhandled redhat-release info %q", string(lsbRelease))
 	} else if !os.IsNotExist(err) {
@@ -82,12 +88,15 @@ func FindDistribution(rootfs string) (Distribution, error) {
 	}
 
 	// CoreOS uses /usr/lib/os-release
+	// Flatcar uses /usr/lib/os-release
 	usrLibOsRelease, err := ioutil.ReadFile(path.Join(rootfs, "usr/lib/os-release"))
 	if err == nil {
 		for _, line := range strings.Split(string(usrLibOsRelease), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "ID=coreos" {
 				return DistributionCoreOS, nil
+			} else if line == "ID=flatcar" {
+				return DistributionFlatcar, nil
 			}
 		}
 		klog.Warningf("unhandled os-release info %q", string(usrLibOsRelease))

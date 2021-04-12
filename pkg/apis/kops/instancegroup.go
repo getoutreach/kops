@@ -154,7 +154,7 @@ type InstanceGroupSpec struct {
 }
 
 const (
-	// SpotAllocationStrategyLowestPrices indicates a lowest price strategy
+	// SpotAllocationStrategyLowestPrices indicates a lowest-price strategy
 	SpotAllocationStrategyLowestPrices = "lowest-price"
 	// SpotAllocationStrategyDiversified indicates a diversified strategy
 	SpotAllocationStrategyDiversified = "diversified"

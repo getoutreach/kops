@@ -46,6 +46,9 @@ func (m *MockAutoscaling) DescribeLaunchConfigurationsPages(request *autoscaling
 	if request.LaunchConfigurationNames != nil {
 		klog.Fatalf("LaunchConfigurationNames not implemented")
 	}
+	if request.MaxRecords != nil {
+		klog.Fatalf("MaxRecords not implemented")
+	}
 	if request.NextToken != nil {
 		klog.Fatalf("NextToken not implemented")
 	}
