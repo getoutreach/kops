@@ -23,9 +23,7 @@ import (
 
 	"github.com/blang/semver"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 )
 
@@ -140,42 +138,6 @@ func (c *ChannelVersion) replaces(existing *ChannelVersion) bool {
 		}
 	} else {
 		klog.Warningf("Existing ChannelVersion did not have a version; can't perform real version check")
-	}
-
-	if c.Version == nil {
-		klog.Warningf("New ChannelVersion did not have a version; can't perform real version check")
-		return false
-	}
-
-	return true
-}
-
-func (c *Channel) GetInstalledVersion(k8sClient kubernetes.Interface) (*ChannelVersion, error) {
-	ns, err := k8sClient.CoreV1().Namespaces().Get(c.Namespace, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("error querying namespace %q: %v", c.Namespace, err)
-	}
-
-	annotationValue, ok := ns.Annotations[c.AnnotationName()]
-	if !ok {
-		return nil, nil
-	}
-
-	return ParseChannelVersion(annotationValue)
-}
-
-type annotationPatch struct {
-	Metadata annotationPatchMetadata `json:"metadata,omitempty"`
-}
-type annotationPatchMetadata struct {
-	Annotations map[string]string `json:"annotations,omitempty"`
-}
-
-func (c *Channel) SetInstalledVersion(k8sClient kubernetes.Interface, version *ChannelVersion) error {
-	// Primarily to check it exists
-	_, err := k8sClient.CoreV1().Namespaces().Get(c.Namespace, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("error querying namespace %q: %v", c.Namespace, err)
 	}
 
 	value, err := version.Encode()
