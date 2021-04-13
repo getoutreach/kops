@@ -132,7 +132,6 @@ type ClusterSpec struct {
 	FileAssets []FileAssetSpec `json:"fileAssets,omitempty"`
 	// EtcdClusters stores the configuration for each cluster
 	EtcdClusters []*EtcdClusterSpec `json:"etcdClusters,omitempty"`
-
 	// Component configurations
 	Docker                         *DockerConfig                 `json:"docker,omitempty"`
 	KubeDNS                        *KubeDNSConfig                `json:"kubeDNS,omitempty"`
@@ -280,6 +279,14 @@ type KopeioAuthenticationSpec struct {
 type AwsAuthenticationSpec struct {
 	// Image is the AWS IAM Authenticator docker image to uses
 	Image string `json:"image,omitempty"`
+	// MemoryRequest memory request of AWS IAM Authenticator container. Default 20Mi
+	MemoryRequest *resource.Quantity `json:"memoryRequest,omitempty"`
+	// CPURequest CPU request of AWS IAM Authenticator container. Default 10m
+	CPURequest *resource.Quantity `json:"cpuRequest,omitempty"`
+	// MemoryLimit memory limit of AWS IAM Authenticator container. Default 20Mi
+	MemoryLimit *resource.Quantity `json:"memoryLimit,omitempty"`
+	// CPULimit CPU limit of AWS IAM Authenticator container. Default 10m
+	CPULimit *resource.Quantity `json:"cpuLimit,omitempty"`
 }
 
 type AuthorizationSpec struct {
@@ -334,6 +341,8 @@ type LoadBalancerAccessSpec struct {
 	UseForInternalApi bool `json:"useForInternalApi,omitempty"`
 	// SSLCertificate allows you to specify the ACM cert to be used the LB
 	SSLCertificate string `json:"sslCertificate,omitempty"`
+	// CrossZoneLoadBalancing allows you to enable the cross zone load balancing
+	CrossZoneLoadBalancing *bool `json:"crossZoneLoadBalancing,omitempty"`
 }
 
 // KubeDNSConfig defines the kube dns configuration
