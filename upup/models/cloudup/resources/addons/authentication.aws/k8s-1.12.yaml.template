@@ -46,11 +46,11 @@ spec:
 
         resources:
           requests:
-            memory: {{ or .Authentication.Aws.MemoryRequest "20Mi" }}
-            cpu: {{ or .Authentication.Aws.CPURequest "10m" }}
+            memory: 20Mi
+            cpu: 10m
           limits:
-            memory: {{ or .Authentication.Aws.MemoryLimit "20Mi" }}
-            cpu: {{ or .Authentication.Aws.CPULimit "100m" }}
+            memory: 20Mi
+            cpu: 100m
 
         volumeMounts:
         - name: config

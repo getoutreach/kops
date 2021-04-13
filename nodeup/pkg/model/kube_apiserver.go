@@ -21,8 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"k8s.io/kops/util/pkg/proxy"
-
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/flagbuilder"
 	"k8s.io/kops/pkg/k8scodecs"
@@ -401,7 +399,7 @@ func (b *KubeAPIServerBuilder) buildPod() (*v1.Pod, error) {
 			"/usr/local/bin/kube-apiserver",
 			sortedStrings(flags),
 			"/var/log/kube-apiserver.log"),
-		Env: proxy.GetProxyEnvVars(b.Cluster.Spec.EgressProxy),
+		Env: getProxyEnvVars(b.Cluster.Spec.EgressProxy),
 		LivenessProbe: &v1.Probe{
 			Handler: v1.Handler{
 				HTTPGet: probeAction,

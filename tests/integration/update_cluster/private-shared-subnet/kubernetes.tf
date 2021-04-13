@@ -248,8 +248,7 @@ resource "aws_elb" "api-private-shared-subnet-example-com" {
     timeout             = 5
   }
 
-  cross_zone_load_balancing = false
-  idle_timeout              = 300
+  idle_timeout = 300
 
   tags = {
     KubernetesCluster                                         = "private-shared-subnet.example.com"

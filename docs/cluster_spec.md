@@ -67,14 +67,6 @@ spec:
       useForInternalApi: true
 ```
 
-You can also set the API load balancer to be cross-zone:
-```yaml
-spec:
-  api:
-    loadBalancer:
-      crossZoneLoadBalancing: true
-```
-
 ### etcdClusters v3 & tls
 
 Although kops doesn't presently default to etcd3, it is possible to turn on both v3 and TLS authentication for communication amongst cluster members. These options may be enabled via the cluster spec (manifests only i.e. no command line options as yet). An upfront warning; at present no upgrade path exists for migrating from v2 to v3 so **DO NOT** try to enable this on a v2 running cluster as it must be done on cluster creation. The below example snippet assumes a HA cluster of three masters.
@@ -433,7 +425,6 @@ spec:
   kubeControllerManager:
     horizontalPodAutoscalerSyncPeriod: 15s
     horizontalPodAutoscalerDownscaleDelay: 5m0s
-    horizontalPodAutoscalerDownscaleStabilization: 5m
     horizontalPodAutoscalerUpscaleDelay: 3m0s
     horizontalPodAutoscalerTolerance: 0.1
     experimentalClusterSigningDuration: 8760h0m0s
@@ -662,18 +653,6 @@ spec:
     registryMirrors:
     - https://registry.example.com
 ```
-
-#### Skip Install
-
-If you want nodeup to skip the Docker installation tasks, you can do so with:
-
-```yaml
-spec:
-  docker:
-    skipInstall: true
-``` 
-
-**NOTE:** When this field is set to `true`, it is entirely up to the user to install and configure Docker.
 
 #### storage
 

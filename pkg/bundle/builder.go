@@ -20,7 +20,6 @@ import (
 	"archive/tar"
 	"fmt"
 	"path"
-	"strings"
 
 	"k8s.io/klog"
 	"k8s.io/kops/pkg/apis/kops"
@@ -171,16 +170,12 @@ func (b *Builder) Build(cluster *kops.Cluster, ig *kops.InstanceGroup) (*Data, e
 
 		bootstrapScript := model.BootstrapScript{}
 
-		{
-			asset, err := cloudup.NodeUpAsset(assetBuilder)
-			if err != nil {
-				return nil, err
-			}
-
-			bootstrapScript.NodeUpSource = strings.Join(asset.Locations, ",")
-			bootstrapScript.NodeUpSourceHash = asset.Hash.Hex()
+		nodeupLocation, nodeupHash, err := cloudup.NodeUpLocation(assetBuilder)
+		if err != nil {
+			return nil, err
 		}
-
+		bootstrapScript.NodeUpSource = nodeupLocation.String()
+		bootstrapScript.NodeUpSourceHash = nodeupHash.Hex()
 		bootstrapScript.NodeUpConfigBuilder = func(ig *kops.InstanceGroup) (*nodeup.Config, error) {
 			return nodeupConfig, err
 		}

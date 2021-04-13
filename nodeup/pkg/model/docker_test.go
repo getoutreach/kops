@@ -126,10 +126,6 @@ func TestDockerBuilder_LogFlags(t *testing.T) {
 	runDockerBuilderTest(t, "logflags")
 }
 
-func TestDockerBuilder_SkipInstall(t *testing.T) {
-	runDockerBuilderTest(t, "skipinstall")
-}
-
 func TestDockerBuilder_BuildFlags(t *testing.T) {
 	logDriver := "json-file"
 	grid := []struct {

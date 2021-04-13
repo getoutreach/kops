@@ -438,7 +438,75 @@ subjects:
   namespace: kube-system
 ---
 
-apiVersion: apps/v1
+# Include a clusterrole for the kube-controllers component,
+# and bind it to the calico-kube-controllers serviceaccount.
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-kube-controllers
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - networkpolicies
+      - nodes
+    verbs:
+      - watch
+      - list
+      - get
+  - apiGroups:
+    - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - watch
+      - list
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - ippools
+    verbs:
+      - list
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - blockaffinities
+      - ipamblocks
+      - ipamhandles
+    verbs:
+      - get
+      - list
+      - create
+      - update
+      - delete
+  # Needs access to update clusterinformations.
+  - apiGroups: ["crd.projectcalico.org"]
+    resources:
+      - clusterinformations
+    verbs:
+      - get
+      - create
+      - update
+
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-kube-controllers
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-kube-controllers
+subjects:
+- kind: ServiceAccount
+  name: calico-kube-controllers
+  namespace: kube-system
+
+---
+
+# Source: calico/templates/calico-kube-controllers.yaml
+# See https://github.com/projectcalico/kube-controllers
+apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
   name: calico-kube-controllers
@@ -448,10 +516,7 @@ metadata:
   annotations:
     scheduler.alpha.kubernetes.io/critical-pod: ''
 spec:
-  selector:
-    matchLabels:
-      k8s-app: calico-kube-controllers
-  # The controllers can only have a single active instance.
+  # The controller can only have a single active instance.
   replicas: 1
   strategy:
     type: Recreate
@@ -462,14 +527,21 @@ spec:
       labels:
         k8s-app: calico-kube-controllers
     spec:
-      hostNetwork: true
-      serviceAccount: calico-node
-      serviceAccountName: calico-node
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+      tolerations:
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - key: node-role.kubernetes.io/master
+          effect: NoSchedule
+      serviceAccountName: calico-kube-controllers
       containers:
         - name: calico-kube-controllers
-          image: quay.io/calico/kube-controllers:v3.7.4
+          image: calico/kube-controllers:v3.7.4
           env:
             # Choose which controllers to run.
+            # Only enabling node for now, will have to look into others if we want to use them
             - name: ENABLED_CONTROLLERS
               value: node
             - name: DATASTORE_TYPE
@@ -479,6 +551,7 @@ spec:
               command:
               - /usr/bin/check-status
               - -r
+
 ---
 
 apiVersion: v1
@@ -718,6 +791,12 @@ spec:
               name: etc-hosts
               readOnly: true
       volumes:
+        # Mount in the directory for host-local IPAM allocations. This is
+        # used when upgrading from host-local to calico-ipam, and can be removed
+        # if not using the upgrade-ipam init container.
+        - name: host-local-net-dir
+          hostPath:
+            path: /var/lib/cni/networks
         # Used by calico/node.
         - name: lib-modules
           hostPath:

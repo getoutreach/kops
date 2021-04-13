@@ -21,7 +21,7 @@ GCS_URL=$(GCS_LOCATION:gs://%=https://storage.googleapis.com/%)
 LATEST_FILE?=latest-ci.txt
 GOPATH_1ST:=$(shell go env | grep GOPATH | cut -f 2 -d \")
 UNIQUE:=$(shell date +%s)
-GOVERSION=1.12.5
+GOVERSION=1.11.5
 BUILD=$(GOPATH_1ST)/src/k8s.io/kops/.build
 LOCAL=$(BUILD)/local
 BINDATA_TARGETS=upup/models/bindata.go
@@ -58,7 +58,7 @@ unexport KOPS_BASE_URL KOPS_CLUSTER_NAME KOPS_RUN_OBSOLETE_VERSION KOPS_STATE_ST
 unexport SKIP_REGION_CHECK S3_ACCESS_KEY_ID S3_ENDPOINT S3_REGION S3_SECRET_ACCESS_KEY VSPHERE_USERNAME VSPHERE_PASSWORD
 
 # Keep in sync with upup/models/cloudup/resources/addons/dns-controller/
-DNS_CONTROLLER_TAG=1.14.1
+DNS_CONTROLLER_TAG=1.13.0
 
 # Keep in sync with logic in get_workspace_status
 # TODO: just invoke tools/get_workspace_status.sh?
@@ -221,10 +221,6 @@ check-builds-in-go19:
 .PHONY: check-builds-in-go110
 check-builds-in-go110:
 	docker run -v ${GOPATH_1ST}/src/k8s.io/kops:/go/src/k8s.io/kops golang:1.10 make -C /go/src/k8s.io/kops ci
-
-.PHONY: check-builds-in-go111
-check-builds-in-go111:
-	docker run -v ${GOPATH_1ST}/src/k8s.io/kops:/go/src/k8s.io/kops golang:1.11 make -C /go/src/k8s.io/kops ci
 
 .PHONY: codegen
 codegen: kops-gobindata
@@ -789,7 +785,6 @@ bazel-version-dist: bazel-crossbuild-nodeup bazel-crossbuild-kops bazel-protokub
 	(${SHASUMCMD} ${BAZELUPLOAD}/kops/${VERSION}/windows/amd64/kops.exe | cut -d' ' -f1) > ${BAZELUPLOAD}/kops/${VERSION}/windows/amd64/kops.exe.sha1
 	cp bazel-bin/images/utils-builder/utils.tar.gz ${BAZELUPLOAD}/kops/${VERSION}/linux/amd64/utils.tar.gz
 	(${SHASUMCMD} ${BAZELUPLOAD}/kops/${VERSION}/linux/amd64/utils.tar.gz | cut -d' ' -f1) > ${BAZELUPLOAD}/kops/${VERSION}/linux/amd64/utils.tar.gz.sha1
-	cp -fr ${BAZELUPLOAD}/kops/${VERSION}/* ${BAZELDIST}/
 
 .PHONY: bazel-upload
 bazel-upload: bazel-version-dist # Upload kops to S3

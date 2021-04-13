@@ -24,8 +24,6 @@ import (
 	"os"
 	"strings"
 
-	"k8s.io/kops/util/pkg/proxy"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,9 +39,7 @@ import (
 	"k8s.io/kops/pkg/model"
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
-	"k8s.io/kops/upup/pkg/fi/cloudup/do"
 	"k8s.io/kops/upup/pkg/fi/cloudup/gce"
-	"k8s.io/kops/upup/pkg/fi/cloudup/openstack"
 	"k8s.io/kops/upup/pkg/fi/fitasks"
 	"k8s.io/kops/util/pkg/exec"
 )
@@ -191,7 +187,7 @@ metadata:
   namespace: kube-system
 spec:
   containers:
-  - image: kopeio/etcd-manager:3.0.20190930
+  - image: kopeio/etcd-manager:3.0.20190801
     name: etcd-manager
     resources:
       requests:
@@ -225,14 +221,6 @@ spec:
       type: DirectoryOrCreate
     name: pki
 `
-
-func appendEnvVariableIfExist(variable string, envs []v1.EnvVar) []v1.EnvVar {
-	envVarValue := os.Getenv(variable)
-	if envVarValue != "" {
-		envs = append(envs, v1.EnvVar{Name: variable, Value: envVarValue})
-	}
-	return envs
-}
 
 // buildPod creates the pod spec, based on the EtcdClusterSpec
 func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Pod, error) {
@@ -391,28 +379,6 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 			}
 			config.VolumeNameTag = gce.GceLabelNameEtcdClusterPrefix + etcdCluster.Name
 
-		case kops.CloudProviderDO:
-			config.VolumeProvider = "do"
-
-			// DO does not support . in tags / names
-			safeClusterName := do.SafeClusterName(b.Cluster.Name)
-
-			config.VolumeTag = []string{
-				fmt.Sprintf("%s=%s", do.TagKubernetesClusterNamePrefix, safeClusterName),
-				do.TagKubernetesClusterIndex,
-			}
-			config.VolumeNameTag = do.TagNameEtcdClusterPrefix + etcdCluster.Name
-
-		case kops.CloudProviderOpenstack:
-			config.VolumeProvider = "openstack"
-
-			config.VolumeTag = []string{
-				openstack.TagNameEtcdClusterPrefix + etcdCluster.Name,
-				openstack.TagNameRolePrefix + "master=1",
-				fmt.Sprintf("%s=%s", openstack.TagClusterName, b.Cluster.Name),
-			}
-			config.VolumeNameTag = openstack.TagNameEtcdClusterPrefix + etcdCluster.Name
-
 		default:
 			return nil, fmt.Errorf("CloudProvider %q not supported with etcd-manager", b.Cluster.Spec.CloudProvider)
 		}
@@ -459,30 +425,6 @@ func (b *EtcdManagerBuilder) buildPod(etcdCluster *kops.EtcdClusterSpec) (*v1.Po
 			},
 		})
 	}
-
-	container.Env = proxy.GetProxyEnvVars(b.Cluster.Spec.EgressProxy)
-
-	// Custom S3 endpoint
-	container.Env = appendEnvVariableIfExist("S3_ENDPOINT", container.Env)
-	container.Env = appendEnvVariableIfExist("S3_ACCESS_KEY_ID", container.Env)
-	container.Env = appendEnvVariableIfExist("S3_SECRET_ACCESS_KEY", container.Env)
-
-	// Openstack related values
-	container.Env = appendEnvVariableIfExist("OS_TENANT_ID", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_TENANT_NAME", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_PROJECT_ID", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_PROJECT_NAME", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_PROJECT_DOMAIN_NAME", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_PROJECT_DOMAIN_ID", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_DOMAIN_NAME", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_DOMAIN_ID", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_USERNAME", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_PASSWORD", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_AUTH_URL", container.Env)
-	container.Env = appendEnvVariableIfExist("OS_REGION_NAME", container.Env)
-
-	// Digital Ocean related values.
-	container.Env = appendEnvVariableIfExist("DIGITALOCEAN_ACCESS_TOKEN", container.Env)
 
 	{
 		foundPKI := false

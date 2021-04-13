@@ -8,18 +8,6 @@ You can view the client API docs here: [http://godoc.org/github.com/digitalocean
 
 You can view DigitalOcean API docs here: [https://developers.digitalocean.com/documentation/v2/](https://developers.digitalocean.com/documentation/v2/)
 
-## Install
-```sh
-go get github.com/digitalocean/godo@vX.Y.Z
-```
-
-where X.Y.Z is the [version](https://github.com/digitalocean/godo/releases) you need.
-
-or
-```sh
-go get github.com/digitalocean/godo
-```
-for non Go modules usage or latest version.
 
 ## Usage
 
@@ -39,37 +27,25 @@ at the DigitalOcean Control Panel [Applications Page](https://cloud.digitalocean
 You can then use your token to create a new client:
 
 ```go
-package main
+import "golang.org/x/oauth2"
 
-import (
-	"context"
-	"github.com/digitalocean/godo"
-	"golang.org/x/oauth2"
-)
-
-const (
-    pat = "mytoken"
-)
-
+pat := "mytoken"
 type TokenSource struct {
-	AccessToken string
+    AccessToken string
 }
 
 func (t *TokenSource) Token() (*oauth2.Token, error) {
-	token := &oauth2.Token{
-		AccessToken: t.AccessToken,
-	}
-	return token, nil
+    token := &oauth2.Token{
+        AccessToken: t.AccessToken,
+    }
+    return token, nil
 }
 
-func main() {
-	tokenSource := &TokenSource{
-		AccessToken: pat,
-	}
-
-	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
-	client := godo.NewClient(oauthClient)
+tokenSource := &TokenSource{
+    AccessToken: pat,
 }
+oauthClient := oauth2.NewClient(context.Background(), tokenSource)
+client := godo.NewClient(oauthClient)
 ```
 
 ## Examples
@@ -83,7 +59,7 @@ dropletName := "super-cool-droplet"
 createRequest := &godo.DropletCreateRequest{
     Name:   dropletName,
     Region: "nyc3",
-    Size:   "s-1vcpu-1gb",
+    Size:   "512mb",
     Image: godo.DropletCreateImage{
         Slug: "ubuntu-14-04-x64",
     },
@@ -142,6 +118,10 @@ func DropletList(ctx context.Context, client *godo.Client) ([]godo.Droplet, erro
 ## Versioning
 
 Each version of the client is tagged and the version is updated accordingly.
+
+Since Go does not have a built-in versioning, a package management tool is
+recommended - a good one that works with git tags is
+[gopkg.in](http://labix.org/gopkg.in).
 
 To see the list of past versions, run `git tag`.
 

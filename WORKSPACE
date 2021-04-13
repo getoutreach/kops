@@ -6,20 +6,14 @@ load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
 http_archive(
     name = "io_bazel_rules_go",
-    urls = [
-        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/rules_go/releases/download/0.19.3/rules_go-0.19.3.tar.gz",
-        "https://github.com/bazelbuild/rules_go/releases/download/0.19.3/rules_go-0.19.3.tar.gz",
-    ],
-    sha256 = "313f2c7a23fecc33023563f082f381a32b9b7254f727a7dd2d6380ccc6dfe09b",
+    url = "https://github.com/bazelbuild/rules_go/releases/download/0.18.2/rules_go-0.18.2.tar.gz",
+    sha256 = "31f959ecf3687f6e0bb9d01e1e7a7153367ecd82816c9c0ae149cd0e5a92bf8c",
 )
 
 http_archive(
     name = "bazel_gazelle",
-    urls = [
-        "https://storage.googleapis.com/bazel-mirror/github.com/bazelbuild/bazel-gazelle/releases/download/0.18.2/bazel-gazelle-0.18.2.tar.gz",
-        "https://github.com/bazelbuild/bazel-gazelle/releases/download/0.18.2/bazel-gazelle-0.18.2.tar.gz",
-    ],
-    sha256 = "7fc87f4170011201b1690326e8c16c5d802836e3a0d617d8f75c3af2b23180c4",
+    urls = ["https://github.com/bazelbuild/bazel-gazelle/releases/download/0.17.0/bazel-gazelle-0.17.0.tar.gz"],
+    sha256 = "3c681998538231a2d24d0c07ed5a7658cb72bfb5fd4bf9911157c0e9ac6a2687",
 )
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_toolchains")
@@ -27,7 +21,7 @@ load("@io_bazel_rules_go//go:deps.bzl", "go_rules_dependencies", "go_register_to
 go_rules_dependencies()
 
 go_register_toolchains(
-    go_version = "1.12.9",
+    go_version = "1.11.5",
 )
 
 load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies")
@@ -67,7 +61,7 @@ container_pull(
 git_repository(
     name = "distroless",
     remote = "https://github.com/googlecloudplatform/distroless.git",
-    commit = "fa0765cc86064801e42a3b35f50ff2242aca9998",
+    commit = "3585653b2b0d33c3fb369b907ef68df8344fd2ad",
 )
 
 load(
@@ -126,7 +120,7 @@ http_file(
 
 git_repository(
     name = "io_k8s_repo_infra",
-    commit = "f85734f673056977d8ba04b0386394b684ca2acb",
+    commit = "4ce715fbe67d8fbed05ec2bb47a148e754100a4b",
     remote = "https://github.com/kubernetes/repo-infra.git",
-    shallow_since = "1563324513 -0800",
+    shallow_since = "1517262872 -0800",
 )

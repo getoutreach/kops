@@ -53,8 +53,11 @@ var defaultKopsMirrors = []mirror{
 
 var kopsBaseUrl *url.URL
 
-// nodeUpAsset caches the nodeup download urls/hash
-var nodeUpAsset *MirroredAsset
+// nodeUpLocation caches the nodeUpLocation url
+var nodeUpLocation *url.URL
+
+// nodeUpHash caches the hash for nodeup
+var nodeUpHash *hashing.Hash
 
 // protokubeLocation caches the protokubeLocation url
 var protokubeLocation *url.URL
@@ -114,42 +117,36 @@ func SetKopsAssetsLocations(assetsBuilder *assets.AssetBuilder) error {
 	return nil
 }
 
-// NodeUpAsset returns the asset for where nodeup should be downloaded
-func NodeUpAsset(assetsBuilder *assets.AssetBuilder) (*MirroredAsset, error) {
+// NodeUpLocation returns the URL where nodeup should be downloaded
+func NodeUpLocation(assetsBuilder *assets.AssetBuilder) (*url.URL, *hashing.Hash, error) {
 	// Avoid repeated logging
-	if nodeUpAsset != nil {
+	if nodeUpLocation != nil && nodeUpHash != nil {
 		// Avoid repeated logging
-		klog.V(8).Infof("Using cached nodeup location: %v", nodeUpAsset.Locations)
-		return nodeUpAsset, nil
+		klog.V(8).Infof("Using cached nodeup location: %q", nodeUpLocation.String())
+		return nodeUpLocation, nodeUpHash, nil
 	}
 	env := os.Getenv("NODEUP_URL")
 	var err error
-	var u *url.URL
-	var hash *hashing.Hash
 	if env == "" {
-		u, hash, err = KopsFileUrl("linux/amd64/nodeup", assetsBuilder)
+		nodeUpLocation, nodeUpHash, err = KopsFileUrl("linux/amd64/nodeup", assetsBuilder)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		klog.V(8).Infof("Using default nodeup location: %q", u.String())
+		klog.V(8).Infof("Using default nodeup location: %q", nodeUpLocation.String())
 	} else {
-		u, err = url.Parse(env)
+		nodeUpLocation, err = url.Parse(env)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse env var NODEUP_URL %q as a url: %v", env, err)
+			return nil, nil, fmt.Errorf("unable to parse env var NODEUP_URL %q as a url: %v", env, err)
 		}
 
-		u, hash, err = assetsBuilder.RemapFileAndSHA(u)
+		nodeUpLocation, nodeUpHash, err = assetsBuilder.RemapFileAndSHA(nodeUpLocation)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		klog.Warningf("Using nodeup location from NODEUP_URL env var: %q", u.String())
+		klog.Warningf("Using nodeup location from NODEUP_URL env var: %q", nodeUpLocation.String())
 	}
 
-	asset := BuildMirroredAsset(u, hash)
-
-	nodeUpAsset = asset
-
-	return asset, nil
+	return nodeUpLocation, nodeUpHash, nil
 }
 
 // TODO make this a container when hosted assets

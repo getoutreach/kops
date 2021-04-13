@@ -18,9 +18,7 @@ package cloudup
 
 import (
 	"fmt"
-	"strings"
 
-	"k8s.io/klog"
 	channelsapi "k8s.io/kops/channels/pkg/api"
 	"k8s.io/kops/pkg/apis/kops"
 	"k8s.io/kops/pkg/assets"
@@ -43,67 +41,9 @@ var _ fi.ModelBuilder = &BootstrapChannelBuilder{}
 
 // Build is responsible for adding the addons to the channel
 func (b *BootstrapChannelBuilder) Build(c *fi.ModelBuilderContext) error {
-
-	// manifestURL, err := a.GetManifestFullUrl()
-	// data, err := vfs.Context.ReadFile(manifestURL.String())
-	// if err != nil {
-	// 	return &ChannelVersion{}
-	// }
-	// manifest := string(data)
-	// klog.V(4).Infof("Manifest %v", manifest)
-
-	// manifestHash, err := utils.HashString(&manifest)
-	// klog.V(4).Infof("hash %s", manifestHash)
-	// if err != nil {
-	// 	manifestHash = ""
-	// }
-
-	addons := b.buildAddons()
-	tasks := c.Tasks
-
-	for _, a := range addons.Spec.Addons {
-		key := *a.Name
-		if a.Id != "" {
-			key = key + "-" + a.Id
-		}
-		name := b.cluster.ObjectMeta.Name + "-addons-" + key
-		manifestPath := "addons/" + *a.Manifest
-
-		manifestResource := b.templates.Find(manifestPath)
-		if manifestResource == nil {
-			return fmt.Errorf("unable to find manifest %s", manifestPath)
-		}
-
-		manifestBytes, err := fi.ResourceAsBytes(manifestResource)
-		if err != nil {
-			return fmt.Errorf("error reading manifest %s: %v", manifestPath, err)
-		}
-
-		manifestBytes, err = b.assetBuilder.RemapManifest(manifestBytes)
-		if err != nil {
-			return fmt.Errorf("error remapping manifest %s: %v", manifestPath, err)
-		}
-
-		// Trim whitespace
-		manifestBytes = []byte(strings.TrimSpace(string(manifestBytes)))
-
-		rawManifest := string(manifestBytes)
-		klog.V(4).Infof("Manifest %v", rawManifest)
-
-		manifestHash, err := utils.HashString(rawManifest)
-		klog.V(4).Infof("hash %s", manifestHash)
-		if err != nil {
-			return fmt.Errorf("error hashing manifest: %v", err)
-		}
-		a.ManifestHash = manifestHash
-
-		tasks[name] = &fitasks.ManagedFile{
-			Contents:  fi.WrapResource(fi.NewBytesResource(manifestBytes)),
-			Lifecycle: b.Lifecycle,
-			Location:  fi.String(manifestPath),
-			Name:      fi.String(name),
-		}
-
+	addons, manifests, err := b.buildManifest()
+	if err != nil {
+		return err
 	}
 
 	addonsYAML, err := utils.YamlMarshal(addons)
@@ -112,6 +52,7 @@ func (b *BootstrapChannelBuilder) Build(c *fi.ModelBuilderContext) error {
 	}
 
 	name := b.cluster.ObjectMeta.Name + "-addons-bootstrap"
+	tasks := c.Tasks
 
 	tasks[name] = &fitasks.ManagedFile{
 		Contents:  fi.WrapResource(fi.NewBytesResource(addonsYAML)),
@@ -120,13 +61,40 @@ func (b *BootstrapChannelBuilder) Build(c *fi.ModelBuilderContext) error {
 		Name:      fi.String(name),
 	}
 
+	for key, manifest := range manifests {
+		name := b.cluster.ObjectMeta.Name + "-addons-" + key
+
+		manifestResource := b.templates.Find(manifest)
+		if manifestResource == nil {
+			return fmt.Errorf("unable to find manifest %s", manifest)
+		}
+
+		manifestBytes, err := fi.ResourceAsBytes(manifestResource)
+		if err != nil {
+			return fmt.Errorf("error reading manifest %s: %v", manifest, err)
+		}
+
+		manifestBytes, err = b.assetBuilder.RemapManifest(manifestBytes)
+		if err != nil {
+			return fmt.Errorf("error remapping manifest %s: %v", manifest, err)
+		}
+
+		tasks[name] = &fitasks.ManagedFile{
+			Contents:  fi.WrapResource(fi.NewBytesResource(manifestBytes)),
+			Lifecycle: b.Lifecycle,
+			Location:  fi.String(manifest),
+			Name:      fi.String(name),
+		}
+	}
+
 	return nil
 }
 
-func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
+func (b *BootstrapChannelBuilder) buildManifest() (*channelsapi.Addons, map[string]string, error) {
 	addons := &channelsapi.Addons{}
 	addons.Kind = "Addons"
 	addons.ObjectMeta.Name = "bootstrap"
+	manifests := make(map[string]string)
 
 	{
 		key := "core.addons.k8s.io"
@@ -139,6 +107,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 			Selector: map[string]string{"k8s-addon": key},
 			Manifest: fi.String(location),
 		})
+		manifests[key] = "addons/" + location
 	}
 
 	// @check if podsecuritypolicies are enabled and if so, push the default kube-system policy
@@ -158,6 +127,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.9.0 <1.10.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		// In k8s v1.10, the PodSecurityPolicy API has been moved to the policy/v1beta1 API group
@@ -173,6 +143,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.10.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -187,6 +158,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -207,6 +179,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.10.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -221,6 +194,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -244,6 +218,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: "<1.6.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -258,6 +233,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.6.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -272,6 +248,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -293,12 +270,13 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.6.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 
 		{
 			key := "coredns.addons.k8s.io"
-			version := "1.3.1"
+			version := "1.3.0-kops.2"
 
 			{
 				location := key + "/k8s-1.12.yaml"
@@ -312,6 +290,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -346,6 +325,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.8.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -369,6 +349,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.9.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -383,6 +364,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 			Selector: map[string]string{"k8s-addon": key},
 			Manifest: fi.String(location),
 		})
+		manifests[key] = "addons/" + location
 	}
 
 	// @check the dns-controller has not been disabled
@@ -390,7 +372,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 	if externalDNS == nil || !externalDNS.Disable {
 		{
 			key := "dns-controller.addons.k8s.io"
-			version := "1.14.1"
+			version := "1.13.0"
 
 			{
 				location := key + "/pre-k8s-1.6.yaml"
@@ -404,6 +386,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: "<1.6.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -418,6 +401,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.6.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -432,6 +416,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -453,6 +438,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: "<1.6.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -467,6 +453,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.6.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -481,6 +468,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -501,6 +489,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.7.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -515,6 +504,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.7.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -534,6 +524,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.8.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -553,6 +544,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.7.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -567,6 +559,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.7.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -586,6 +579,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.9.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -600,6 +594,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.9.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -638,6 +633,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.6.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -652,6 +648,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.6.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -666,17 +663,18 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
 	if b.cluster.Spec.Networking.Weave != nil {
 		key := "networking.weave"
 		versions := map[string]string{
-			"pre-k8s-1.6": "2.3.0-kops.3",
-			"k8s-1.6":     "2.3.0-kops.3",
-			"k8s-1.7":     "2.5.2-kops.2",
-			"k8s-1.8":     "2.5.2-kops.2",
-			"k8s-1.12":    "2.5.2-kops.2",
+			"pre-k8s-1.6": "2.3.0-kops.2",
+			"k8s-1.6":     "2.3.0-kops.2",
+			"k8s-1.7":     "2.5.1-kops.1",
+			"k8s-1.8":     "2.5.1-kops.1",
+			"k8s-1.12":    "2.5.1-kops.1",
 		}
 
 		{
@@ -691,6 +689,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.6.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -705,6 +704,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.6.0 <1.7.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -719,6 +719,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.7.0 <1.8.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -733,6 +734,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.8.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -747,6 +749,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -766,6 +769,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.6.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -780,6 +784,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.6.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -794,6 +799,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -819,6 +825,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		if b.cluster.Spec.Networking.Calico.MajorVersion == "v3" {
@@ -834,6 +841,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.7.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		} else {
 			{
@@ -848,6 +856,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: "<1.6.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -862,6 +871,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.6.0 <1.7.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -876,6 +886,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.7.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -901,6 +912,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: "<1.6.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -915,6 +927,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.6.0 <1.8.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -929,6 +942,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.8.0 <1.9.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 		{
 			id := "k8s-1.9"
@@ -942,6 +956,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.9.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 		{
 			id := "k8s-1.12"
@@ -955,12 +970,13 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
 	if b.cluster.Spec.Networking.Kuberouter != nil {
 		key := "networking.kuberouter"
-		version := "0.3.1-kops.1"
+		version := "0.1.1-kops.3"
 
 		{
 			location := key + "/k8s-1.6.yaml"
@@ -974,6 +990,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.6.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -988,6 +1005,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -1007,6 +1025,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.7.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -1021,6 +1040,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -1040,6 +1060,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.7.0 <1.8.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -1054,6 +1075,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.8.0 <1.10.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -1068,6 +1090,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.10.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -1082,6 +1105,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -1101,6 +1125,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.7.0 <1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 
 		{
@@ -1115,6 +1140,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 				KubernetesVersion: ">=1.12.0",
 				Id:                id,
 			})
+			manifests[key+"-"+id] = "addons/" + location
 		}
 	}
 
@@ -1137,6 +1163,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.8.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -1151,6 +1178,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 		if b.cluster.Spec.Authentication.Aws != nil {
@@ -1169,6 +1197,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.10.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -1183,6 +1212,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -1205,6 +1235,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.11.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		} else {
 			{
@@ -1222,6 +1253,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.7.0 <1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 
 			{
@@ -1239,6 +1271,7 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 					KubernetesVersion: ">=1.12.0",
 					Id:                id,
 				})
+				manifests[key+"-"+id] = "addons/" + location
 			}
 		}
 	}
@@ -1254,7 +1287,8 @@ func (b *BootstrapChannelBuilder) buildAddons() *channelsapi.Addons {
 			Selector: map[string]string{"k8s-addon": key},
 			Manifest: fi.String(location),
 		})
+		manifests[key] = "addons/" + location
 	}
 
-	return addons
+	return addons, manifests, nil
 }
