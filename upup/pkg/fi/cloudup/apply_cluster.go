@@ -1189,12 +1189,12 @@ func (c *ApplyClusterCmd) AddFileAssets(assetBuilder *assets.AssetBuilder) error
 		c.Assets = append(c.Assets, BuildMirroredAsset(utilsLocation, hash))
 	}
 
-	asset, err := NodeUpAsset(assetBuilder)
+	n, hash, err := NodeUpLocation(assetBuilder)
 	if err != nil {
 		return err
 	}
-	c.NodeUpSource = strings.Join(asset.Locations, ",")
-	c.NodeUpHash = asset.Hash.Hex()
+	c.NodeUpSource = n.String()
+	c.NodeUpHash = hash.Hex()
 
 	// Explicitly add the protokube image,
 	// otherwise when the Target is DryRun this asset is not added

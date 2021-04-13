@@ -1,9 +1,12 @@
 /*
 Copyright 2016 The Kubernetes Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -34,10 +37,9 @@ type Channel struct {
 }
 
 type ChannelVersion struct {
-	Version      *string `json:"version,omitempty"`
-	Channel      *string `json:"channel,omitempty"`
-	Id           string  `json:"id,omitempty"`
-	ManifestHash string  `json:"manifestHash,omitempty"`
+	Version *string `json:"version,omitempty"`
+	Channel *string `json:"channel,omitempty"`
+	Id      string  `json:"id,omitempty"`
 }
 
 func stringValue(s *string) string {
@@ -51,9 +53,6 @@ func (c *ChannelVersion) String() string {
 	s := "Version=" + stringValue(c.Version) + " Channel=" + stringValue(c.Channel)
 	if c.Id != "" {
 		s += " Id=" + c.Id
-	}
-	if c.ManifestHash != "" {
-		s += " ManifestHash=" + c.ManifestHash
 	}
 	return s
 }
@@ -99,10 +98,8 @@ func (c *Channel) AnnotationName() string {
 }
 
 func (c *ChannelVersion) replaces(existing *ChannelVersion) bool {
-	klog.V(4).Infof("Checking existing channel: %v compared to new channel: %v", existing, c)
 	if existing.Version != nil {
 		if c.Version == nil {
-			klog.V(4).Infof("New Version info missing")
 			return false
 		}
 		cVersion, err := semver.ParseTolerant(*c.Version)
@@ -116,31 +113,20 @@ func (c *ChannelVersion) replaces(existing *ChannelVersion) bool {
 			return true
 		}
 		if cVersion.LT(existingVersion) {
-			klog.V(4).Infof("New Version is less then old")
 			return false
 		} else if cVersion.GT(existingVersion) {
-			klog.V(4).Infof("New Version is greater then old")
 			return true
 		} else {
 			// Same version; check ids
 			if c.Id == existing.Id {
-				// Same id; check manifests
-				if c.ManifestHash == existing.ManifestHash {
-					klog.V(4).Infof("Manifest Match")
-					return false
-				} else {
-					klog.V(4).Infof("Channels had same version and ids %q, %q but different ManifestHash (%q vs %q); will replace", *c.Version, c.Id, c.ManifestHash, existing.ManifestHash)
-				}
-			} else {
-				klog.V(4).Infof("Channels had same version %q but different ids (%q vs %q); will replace", *c.Version, c.Id, existing.Id)
+				return false
 			}
+			klog.V(4).Infof("Channels had same version %q but different ids (%q vs %q); will replace", *c.Version, c.Id, existing.Id)
 		}
-	} else {
-		klog.Warningf("Existing ChannelVersion did not have a version; can't perform real version check")
 	}
 
+	klog.Warningf("ChannelVersion did not have a version; can't perform real version check")
 	if c.Version == nil {
-		klog.Warningf("New ChannelVersion did not have a version; can't perform real version check")
 		return false
 	}
 
@@ -181,14 +167,14 @@ func (c *Channel) SetInstalledVersion(k8sClient kubernetes.Interface, version *C
 	}
 
 	annotationPatch := &annotationPatch{Metadata: annotationPatchMetadata{Annotations: map[string]string{c.AnnotationName(): value}}}
-	annotationPatchJSON, err := json.Marshal(annotationPatch)
+	annotationPatchJson, err := json.Marshal(annotationPatch)
 	if err != nil {
 		return fmt.Errorf("error building annotation patch: %v", err)
 	}
 
-	klog.V(2).Infof("sending patch: %q", string(annotationPatchJSON))
+	klog.V(2).Infof("sending patch: %q", string(annotationPatchJson))
 
-	_, err = k8sClient.CoreV1().Namespaces().Patch(c.Namespace, types.StrategicMergePatchType, annotationPatchJSON)
+	_, err = k8sClient.CoreV1().Namespaces().Patch(c.Namespace, types.StrategicMergePatchType, annotationPatchJson)
 	if err != nil {
 		return fmt.Errorf("error applying annotation to namespace: %v", err)
 	}

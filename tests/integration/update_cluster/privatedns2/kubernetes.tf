@@ -263,8 +263,7 @@ resource "aws_elb" "api-privatedns2-example-com" {
     timeout             = 5
   }
 
-  cross_zone_load_balancing = false
-  idle_timeout              = 300
+  idle_timeout = 300
 
   tags = {
     KubernetesCluster                               = "privatedns2.example.com"

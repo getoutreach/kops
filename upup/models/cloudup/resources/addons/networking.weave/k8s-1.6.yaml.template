@@ -116,7 +116,6 @@ spec:
         name: weave-net
         role.kubernetes.io/networking: "1"
       annotations:
-        prometheus.io/scrape: "true"
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
       containers:
@@ -147,14 +146,12 @@ spec:
                   key: network-password
             {{- end }}
           image: 'weaveworks/weave-kube:2.3.0'
-          ports:
-            - name: metrics
-              containerPort: 6782
-          readinessProbe:
+          livenessProbe:
             httpGet:
               host: 127.0.0.1
               path: /status
               port: 6784
+            initialDelaySeconds: 30
           resources:
             requests:
               cpu: 50m
@@ -186,9 +183,6 @@ spec:
                   apiVersion: v1
                   fieldPath: spec.nodeName
           image: 'weaveworks/weave-npc:2.3.0'
-          ports:
-            - name: metrics
-              containerPort: 6781
           resources:
             requests:
               cpu: 50m

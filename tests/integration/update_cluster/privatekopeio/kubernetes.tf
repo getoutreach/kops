@@ -273,8 +273,7 @@ resource "aws_elb" "api-privatekopeio-example-com" {
     timeout             = 5
   }
 
-  cross_zone_load_balancing = false
-  idle_timeout              = 300
+  idle_timeout = 300
 
   tags = {
     KubernetesCluster                                 = "privatekopeio.example.com"

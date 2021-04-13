@@ -21,8 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"k8s.io/kops/util/pkg/proxy"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/kops/pkg/flagbuilder"
 	"k8s.io/kops/pkg/k8scodecs"
@@ -160,7 +158,7 @@ func (b *KubeControllerManagerBuilder) buildPod() (*v1.Pod, error) {
 			"/usr/local/bin/kube-controller-manager",
 			sortedStrings(flags),
 			"/var/log/kube-controller-manager.log"),
-		Env: proxy.GetProxyEnvVars(b.Cluster.Spec.EgressProxy),
+		Env: getProxyEnvVars(b.Cluster.Spec.EgressProxy),
 		LivenessProbe: &v1.Probe{
 			Handler: v1.Handler{
 				HTTPGet: &v1.HTTPGetAction{

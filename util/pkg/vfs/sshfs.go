@@ -190,8 +190,7 @@ func (p *SSHPath) WriteFile(data io.ReadSeeker, acl ACL) error {
 	}
 
 	if err == nil {
-		var session *ssh.Session
-		session, err = p.client.NewSession()
+		session, err := p.client.NewSession()
 		if err != nil {
 			err = fmt.Errorf("error creating session for rename: %v", err)
 		} else {

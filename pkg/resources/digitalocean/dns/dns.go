@@ -17,7 +17,6 @@ limitations under the License.
 package dns
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -25,8 +24,11 @@ import (
 	"strings"
 
 	"github.com/digitalocean/godo"
-	"golang.org/x/oauth2"
+	"github.com/digitalocean/godo/context"
+
 	"k8s.io/klog"
+
+	"golang.org/x/oauth2"
 
 	"k8s.io/kops/dns-controller/pkg/dns"
 	"k8s.io/kops/dnsprovider/pkg/dnsprovider"

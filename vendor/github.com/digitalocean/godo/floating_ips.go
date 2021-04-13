@@ -1,9 +1,10 @@
 package godo
 
 import (
-	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/digitalocean/godo/context"
 )
 
 const floatingBasePath = "v2/floating_ips"
@@ -35,10 +36,6 @@ type FloatingIP struct {
 
 func (f FloatingIP) String() string {
 	return Stringify(f)
-}
-
-func (f FloatingIP) URN() string {
-	return ToURN("FloatingIP", f.IP)
 }
 
 type floatingIPsRoot struct {

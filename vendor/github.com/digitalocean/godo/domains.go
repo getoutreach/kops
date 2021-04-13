@@ -1,9 +1,10 @@
 package godo
 
 import (
-	"context"
 	"fmt"
 	"net/http"
+
+	"github.com/digitalocean/godo/context"
 )
 
 const domainsBasePath = "v2/domains"
@@ -52,7 +53,7 @@ type domainsRoot struct {
 // DomainCreateRequest respresents a request to create a domain.
 type DomainCreateRequest struct {
 	Name      string `json:"name"`
-	IPAddress string `json:"ip_address,omitempty"`
+	IPAddress string `json:"ip_address"`
 }
 
 // DomainRecordRoot is the root of an individual Domain Record response
@@ -72,12 +73,10 @@ type DomainRecord struct {
 	Type     string `json:"type,omitempty"`
 	Name     string `json:"name,omitempty"`
 	Data     string `json:"data,omitempty"`
-	Priority int    `json:"priority"`
+	Priority int    `json:"priority,omitempty"`
 	Port     int    `json:"port,omitempty"`
 	TTL      int    `json:"ttl,omitempty"`
-	Weight   int    `json:"weight"`
-	Flags    int    `json:"flags"`
-	Tag      string `json:"tag,omitempty"`
+	Weight   int    `json:"weight,omitempty"`
 }
 
 // DomainRecordEditRequest represents a request to update a domain record.
@@ -85,20 +84,14 @@ type DomainRecordEditRequest struct {
 	Type     string `json:"type,omitempty"`
 	Name     string `json:"name,omitempty"`
 	Data     string `json:"data,omitempty"`
-	Priority int    `json:"priority"`
+	Priority int    `json:"priority,omitempty"`
 	Port     int    `json:"port,omitempty"`
 	TTL      int    `json:"ttl,omitempty"`
-	Weight   int    `json:"weight"`
-	Flags    int    `json:"flags"`
-	Tag      string `json:"tag,omitempty"`
+	Weight   int    `json:"weight,omitempty"`
 }
 
 func (d Domain) String() string {
 	return Stringify(d)
-}
-
-func (d Domain) URN() string {
-	return ToURN("Domain", d.Name)
 }
 
 // List all domains.
@@ -294,18 +287,18 @@ func (s *DomainsServiceOp) EditRecord(ctx context.Context,
 
 	path := fmt.Sprintf("%s/%s/records/%d", domainsBasePath, domain, id)
 
-	req, err := s.client.NewRequest(ctx, http.MethodPut, path, editRequest)
+	req, err := s.client.NewRequest(ctx, "PUT", path, editRequest)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	root := new(domainRecordRoot)
-	resp, err := s.client.Do(ctx, req, root)
+	d := new(DomainRecord)
+	resp, err := s.client.Do(ctx, req, d)
 	if err != nil {
 		return nil, resp, err
 	}
 
-	return root.DomainRecord, resp, err
+	return d, resp, err
 }
 
 // CreateRecord creates a record using a DomainRecordEditRequest

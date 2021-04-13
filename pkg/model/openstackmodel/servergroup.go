@@ -83,30 +83,26 @@ func (b *ServerGroupModelBuilder) buildInstances(c *fi.ModelBuilderContext, sg *
 			return fmt.Errorf("Failed to create UUID for instance: %v", err)
 		}
 		// FIXME: Must ensure 63 or less characters
-		// replace all dots and _ with -, this is needed to get external cloudprovider working
-		iName := strings.Replace(strings.ToLower(fmt.Sprintf("%s-%d.%s", ig.Name, i+1, b.ClusterName())), "_", "-", -1)
+		// replace all dots with -, this is needed to get external cloudprovider working
+		iName := strings.ToLower(fmt.Sprintf("%s-%d.%s", ig.Name, i+1, b.ClusterName()))
 		instanceName := fi.String(strings.Replace(iName, ".", "-", -1))
 
 		securityGroupName := b.SecurityGroupName(ig.Spec.Role)
 		securityGroup := b.LinkToSecurityGroup(securityGroupName)
 		var az *string
-		var subnets []*openstacktasks.Subnet
 		if len(ig.Spec.Subnets) > 0 {
-			subnet := ig.Spec.Subnets[int(i)%len(ig.Spec.Subnets)]
 			// bastion subnet name is not actual zone name, it contains "utility-" prefix
 			if ig.Spec.Role == kops.InstanceGroupRoleBastion {
-				az = fi.String(strings.Replace(subnet, "utility-", "", 1))
+				az = fi.String(strings.Replace(ig.Spec.Subnets[int(i)%len(ig.Spec.Subnets)], "utility-", "", 1))
 			} else {
-				az = fi.String(subnet)
+				az = fi.String(ig.Spec.Subnets[int(i)%len(ig.Spec.Subnets)])
 			}
-			subnets = append(subnets, b.LinkToSubnet(s(fmt.Sprintf("%s.%s", subnet, b.ClusterName()))))
 		}
 		// Create instance port task
 		portTask := &openstacktasks.Port{
 			Name:           fi.String(fmt.Sprintf("%s-%s", "port", *instanceName)),
 			Network:        b.LinkToNetwork(),
 			SecurityGroups: append([]*openstacktasks.SecurityGroup{}, securityGroup),
-			Subnets:        subnets,
 			Lifecycle:      b.Lifecycle,
 		}
 		c.AddTask(portTask)
