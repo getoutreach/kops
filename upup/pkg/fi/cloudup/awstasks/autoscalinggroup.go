@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 
 	"k8s.io/kops/upup/pkg/fi"
 	"k8s.io/kops/upup/pkg/fi/cloudup/awsup"
@@ -30,6 +32,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"k8s.io/klog"
 )
 
@@ -85,6 +88,10 @@ type AutoscalingGroup struct {
 }
 
 var _ fi.CompareWithID = &AutoscalingGroup{}
+
+var asgCacheWarm = false
+var asgCacheLock = sync.RWMutex{}
+var asgCache []*autoscaling.Group
 
 // CompareWithID returns the ID of the ASG
 func (e *AutoscalingGroup) CompareWithID() *string {
@@ -180,34 +187,57 @@ func (e *AutoscalingGroup) Find(c *fi.Context) (*AutoscalingGroup, error) {
 	return actual, nil
 }
 
-// findAutoscalingGroup is responsilble for finding all the autoscaling groups for us
-func findAutoscalingGroup(cloud awsup.AWSCloud, name string) (*autoscaling.Group, error) {
+// populateAutoscalingGroups fetches all ASGs from AWS and caches them.
+// This function is not thread-safe and callers must ensure synchronization.
+func populateAutoscalingGroups(cloud awsup.AWSCloud) error {
+	asgCache = []*autoscaling.Group{}
+
 	request := &autoscaling.DescribeAutoScalingGroupsInput{
-		AutoScalingGroupNames: []*string{&name},
+		MaxRecords: aws.Int64(100),
 	}
 
-	var found []*autoscaling.Group
 	err := cloud.Autoscaling().DescribeAutoScalingGroupsPages(request, func(p *autoscaling.DescribeAutoScalingGroupsOutput, lastPage bool) (shouldContinue bool) {
 		for _, g := range p.AutoScalingGroups {
-			// Check for "Delete in progress" (the only use .Status). We won't be able to update or create while
-			// this is true, but filtering it out here makes the messages slightly clearer.
 			if g.Status != nil {
 				klog.Warningf("Skipping AutoScalingGroup %v: %v", fi.StringValue(g.AutoScalingGroupName), fi.StringValue(g.Status))
 				continue
 			}
-
-			if aws.StringValue(g.AutoScalingGroupName) == name {
-				found = append(found, g)
-			} else {
-				klog.Warningf("Got ASG with unexpected name %q", fi.StringValue(g.AutoScalingGroupName))
-			}
+			asgCache = append(asgCache, g)
 		}
-
 		return true
 	})
-	if err != nil {
-		return nil, fmt.Errorf("error listing AutoscalingGroups: %v", err)
+	if err == nil {
+		klog.V(2).Infof("Warmed autoscaling cache")
+		asgCacheWarm = true
 	}
+
+	return err
+}
+
+// findAutoscalingGroup is responsilble for finding all the autoscaling groups for us
+func findAutoscalingGroup(cloud awsup.AWSCloud, name string) (*autoscaling.Group, error) {
+	if !asgCacheWarm {
+		asgCacheLock.Lock()
+		// Check again to see if things have changed while waiting for the lock
+		if !asgCacheWarm {
+			cacheErr := populateAutoscalingGroups(cloud)
+			if cacheErr != nil {
+				asgCacheLock.Unlock()
+				return nil, fmt.Errorf("error listing AutoscalingGroups: %v", cacheErr)
+			}
+		}
+		asgCacheLock.Unlock()
+	}
+
+	var found []*autoscaling.Group
+
+	asgCacheLock.RLock()
+	for _, g := range asgCache {
+		if aws.StringValue(g.AutoScalingGroupName) == name {
+			found = append(found, g)
+		}
+	}
+	asgCacheLock.RUnlock()
 
 	switch len(found) {
 	case 0:
@@ -249,6 +279,10 @@ func (e *AutoscalingGroup) CheckChanges(a, ex, changes *AutoscalingGroup) error 
 
 // RenderAWS is responsible for building the autoscaling group via AWS API
 func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *AutoscalingGroup) error {
+	asgCacheLock.Lock()
+	defer asgCacheLock.Unlock()
+	asgCacheWarm = false
+
 	// @step: did we find an autoscaling group?
 	if a == nil {
 		klog.V(2).Infof("Creating autoscaling group with name: %s", fi.StringValue(e.Name))
@@ -271,6 +305,7 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 				LaunchTemplateName: e.LaunchTemplate.ID,
 			}
 		}
+
 		// @check if we are using mixed instance policies
 		if e.UseMixedInstancesPolicy() {
 			// we can zero this out for now and use the mixed instance policy for definition
@@ -284,7 +319,7 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 					SpotMaxPrice:                        e.MixedSpotMaxPrice,
 				},
 				LaunchTemplate: &autoscaling.LaunchTemplate{
-					LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{LaunchTemplateName: e.LaunchTemplate.ID},
+					LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{LaunchTemplateName: e.LaunchTemplate.ID, Version: aws.String("1")},
 				},
 			}
 			p := request.MixedInstancesPolicy.LaunchTemplate
@@ -346,12 +381,26 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 			return req.MixedInstancesPolicy
 		}
 
+		launchTemplateVersion := "1"
+		if e.LaunchTemplate != nil {
+			dltRequest := &ec2.DescribeLaunchTemplatesInput{
+				LaunchTemplateNames: []*string{e.LaunchTemplate.ID},
+			}
+			dltResponse, err := t.Cloud.EC2().DescribeLaunchTemplates(dltRequest)
+			if err != nil {
+				klog.Warningf("could not find existing LaunchTemplate: %v", err)
+			} else {
+				launchTemplateVersion = strconv.FormatInt(*dltResponse.LaunchTemplates[0].LatestVersionNumber, 10)
+			}
+		}
+
 		if changes.LaunchTemplate != nil {
 			// @note: at the moment we are only using launch templates when using mixed instance policies,
 			// but this might change
 			setup(request).LaunchTemplate = &autoscaling.LaunchTemplate{
 				LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{
 					LaunchTemplateName: changes.LaunchTemplate.ID,
+					Version:            &launchTemplateVersion,
 				},
 			}
 			changes.LaunchTemplate = nil
@@ -382,6 +431,7 @@ func (v *AutoscalingGroup) RenderAWS(t *awsup.AWSAPITarget, a, e, changes *Autos
 				setup(request).LaunchTemplate = &autoscaling.LaunchTemplate{
 					LaunchTemplateSpecification: &autoscaling.LaunchTemplateSpecification{
 						LaunchTemplateName: e.LaunchTemplate.ID,
+						Version:            &launchTemplateVersion,
 					},
 				}
 			}
@@ -649,6 +699,10 @@ type terraformAutoscalingGroup struct {
 
 // RenderTerraform is responsible for rendering the terraform codebase
 func (_ *AutoscalingGroup) RenderTerraform(t *terraform.TerraformTarget, a, e, changes *AutoscalingGroup) error {
+	asgCacheLock.Lock()
+	defer asgCacheLock.Unlock()
+	asgCacheWarm = false
+
 	tf := &terraformAutoscalingGroup{
 		Name:               e.Name,
 		MinSize:            e.MinSize,
@@ -672,6 +726,10 @@ func (_ *AutoscalingGroup) RenderTerraform(t *terraform.TerraformTarget, a, e, c
 	}
 
 	if e.UseMixedInstancesPolicy() {
+		// Temporary warning until https://github.com/terraform-providers/terraform-provider-aws/issues/9750 is resolved
+		if e.MixedSpotAllocationStrategy == fi.String("capacity-optimized") {
+			fmt.Print("Terraform does not currently support a capacity optimized strategy - please see https://github.com/terraform-providers/terraform-provider-aws/issues/9750")
+		}
 		tf.MixedInstancesPolicy = []*terraformMixedInstancesPolicy{
 			{
 				LaunchTemplate: []*terraformAutoscalingLaunchTemplate{
@@ -825,6 +883,10 @@ type cloudformationAutoscalingGroup struct {
 
 // RenderCloudformation is responsible for generating the cloudformation template
 func (_ *AutoscalingGroup) RenderCloudformation(t *cloudformation.CloudformationTarget, a, e, changes *AutoscalingGroup) error {
+	asgCacheLock.Lock()
+	defer asgCacheLock.Unlock()
+	asgCacheWarm = false
+
 	cf := &cloudformationAutoscalingGroup{
 		Name:    e.Name,
 		MinSize: e.MinSize,

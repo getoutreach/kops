@@ -39,7 +39,7 @@ required = [
 # aws-sdk-go is one of our critical dependencies
 [[override]]
   name = "github.com/aws/aws-sdk-go"
-  version = "v1.19.18"
+  version = "v1.23.0"
 
 # We need this for our build
 [[override]]
@@ -456,3 +456,8 @@ required = [
 [[override]]
   name = "github.com/gophercloud/gophercloud"
   revision = "dcc6e84aef1b6713accea7d7d7252ad2bc0e7034"
+
+# Hack around unavailability of this repo in 2020.
+[[override]]
+  name = "bitbucket.org/ww/goautoneg"
+  source = "github.com/munnerz/goautoneg"
