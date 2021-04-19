@@ -51,5 +51,5 @@ jobs:
             export S3_BUCKET="s3://outreach-custom-kops-assets"
             cd "$GOPATH/src/k8s.io/kops"
             if [[ "${CIRCLE_BRANCH}" == "release-1.15-gitpack" ]]; then
-              sudo make upload CI=1
+              make upload CI=1
             fi
