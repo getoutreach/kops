@@ -12,6 +12,14 @@ jobs:
     steps:
       - run:
           command: |
+            sudo apt install apt-transport-https curl gnupg
+            curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor > bazel.gpg
+            sudo mv bazel.gpg /etc/apt/trusted.gpg.d/
+            echo "deb [arch=amd64] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+            sudo apt update && sudo apt install bazel=3.5.0
+
+      - run:
+          command: |
             export GOPATH="$HOME/project/gopath"
             mkdir -p "$GOPATH"
 
@@ -42,6 +50,6 @@ jobs:
             export GOPATH="$HOME/project/gopath"
             export S3_BUCKET="s3://outreach-custom-kops-assets"
             cd "$GOPATH/src/k8s.io/kops"
-            if [[ "${CIRCLE_BRANCH}" == "master" ]]; then
-              make upload CI=1
+            if [[ "${CIRCLE_BRANCH}" == "release-1.15-gitpack" ]]; then
+              sudo make upload CI=1
             fi
