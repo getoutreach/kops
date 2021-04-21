@@ -47,9 +47,9 @@ jobs:
 
       - run:
           command: |
+            rm /home/circleci/project/gopath/src/k8s.io/kops/.build/dist/linux/amd64/utils.tar.gz
             export GOPATH="$HOME/project/gopath"
-            export S3_BUCKET="s3://outreach-custom-kops-assets"
             cd "$GOPATH/src/k8s.io/kops"
             if [[ "${CIRCLE_BRANCH}" == "release-1.15-gitpack" ]]; then
-              make upload CI=1
+              make upload CI=1 S3_BUCKET=s3://outreach-custom-kops-assets
             fi
